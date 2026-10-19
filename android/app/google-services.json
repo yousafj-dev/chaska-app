@@ -1,0 +1,54 @@
+{
+  "project_info": {
+    "project_number": "606589084724",
+    "project_id": "quizistan-academy",
+    "storage_bucket": "quizistan-academy.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:606589084724:android:a5536fead83abb85eb5661",
+        "android_client_info": {
+          "package_name": "com.chaska.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBy9f8qG58HhBUQVm7jzlwpi1cJtAl-yDk"
+        },
+        {
+          "current_key": "AIzaSyDh2Hx5CP_XI80d3NCtjkf5lD1zi71Gpz8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:606589084724:android:94c205531366a804eb5661",
+        "android_client_info": {
+          "package_name": "com.quizistan.quizistan_academy"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBy9f8qG58HhBUQVm7jzlwpi1cJtAl-yDk"
+        },
+        {
+          "current_key": "AIzaSyDh2Hx5CP_XI80d3NCtjkf5lD1zi71Gpz8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
