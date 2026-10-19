@@ -1,7 +1,11 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
-    id("com.google.gms.google-services")
+    // NOTE: com.google.gms.google-services is intentionally NOT applied:
+    // there is no google-services.json yet, and the plugin hard-fails
+    // the build without it. Firebase.initializeApp() is guarded by
+    // try/catch in main() so the app runs in offline mode until the
+    // Firebase project is configured.
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
