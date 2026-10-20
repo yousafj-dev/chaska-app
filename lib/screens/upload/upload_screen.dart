@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:video_player/video_player.dart';
 import 'package:chaska/core/theme/app_theme.dart';
@@ -22,6 +23,7 @@ class _UploadScreenState extends State<UploadScreen> {
   XFile? _picked;
   VideoPlayerController? _preview;
   bool _uploading = false;
+  bool _picking = false;
   double _progress = 0;
   String? _error;
 
@@ -33,6 +35,10 @@ class _UploadScreenState extends State<UploadScreen> {
   }
 
   Future<void> _pick(ImageSource source) async {
+    // Re-entrancy guard: a second tap while the picker is already open
+    // makes image_picker throw PlatformException(already_active).
+    if (_picking) return;
+    _picking = true;
     setState(() => _error = null);
     try {
       final file = await _picker.pickVideo(
@@ -53,8 +59,18 @@ class _UploadScreenState extends State<UploadScreen> {
         _preview = c;
       });
       c.play();
+    } on PlatformException catch (e) {
+      debugPrint('pickVideo PlatformException: ${e.code}');
+      if (!mounted) return;
+      setState(() => _error = e.code == 'already_active'
+          ? 'Picker pehle se khula hai, ek lamha ruko.'
+          : 'Video choose nahi ho saki, dobara try karo.');
     } catch (e) {
-      setState(() => _error = 'Video pick nahi ho saki: $e');
+      debugPrint('pickVideo failed: $e');
+      if (!mounted) return;
+      setState(() => _error = 'Video choose nahi ho saki, dobara try karo.');
+    } finally {
+      _picking = false;
     }
   }
 
