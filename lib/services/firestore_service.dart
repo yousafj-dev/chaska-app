@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:chaska/models/chaska_video.dart';
 import 'package:chaska/models/chaska_comment.dart';
+import 'package:chaska/models/chaska_user.dart';
 import 'package:chaska/services/auth_service.dart';
 
 /// Firestore access for videos, likes and comments.
@@ -21,6 +22,49 @@ class FirestoreService {
   }
 
   CollectionReference get _videos => _dbSafe.collection('chaska_videos');
+
+  CollectionReference get _users => _dbSafe.collection('users');
+
+  /// Live profile of one user (`users/{uid}`). Emits null when the
+  /// doc does not exist yet or Firebase is not ready.
+  Stream<ChaskaUser?> userProfile(String uid) {
+    try {
+      return _users.doc(uid).snapshots().map(
+          (doc) => doc.exists ? ChaskaUser.fromDoc(doc) : null);
+    } catch (e) {
+      debugPrint('userProfile failed: $e');
+      return Stream.value(null);
+    }
+  }
+
+  /// One-shot read of `users/{uid}`; null when missing/unavailable.
+  Future<ChaskaUser?> getUserProfile(String uid) async {
+    try {
+      final doc = await _users.doc(uid).get();
+      return doc.exists ? ChaskaUser.fromDoc(doc) : null;
+    } catch (e) {
+      debugPrint('getUserProfile failed: $e');
+      return null;
+    }
+  }
+
+  /// Creates/merges `users/{uid}` with the editable profile fields.
+  Future<void> updateUserProfile({
+    required String uid,
+    required String displayName,
+    required String photoUrl,
+    required String bio,
+  }) async {
+    await _users.doc(uid).set(
+      {
+        'displayName': displayName,
+        'photoUrl': photoUrl,
+        'bio': bio,
+        'updatedAt': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
+  }
 
   /// Newest-first video feed.
   Stream<List<ChaskaVideo>> videoFeed({int limit = 30}) {
