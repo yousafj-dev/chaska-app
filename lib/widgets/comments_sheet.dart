@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:chaska/core/theme/app_theme.dart';
 import 'package:chaska/models/chaska_video.dart';
 import 'package:chaska/models/chaska_comment.dart';
-import 'package:chaska/services/auth_service.dart';
 import 'package:chaska/services/firestore_service.dart';
 
 /// Bottom sheet: reads/writes `chaska_videos/{id}/comments`.
@@ -56,7 +55,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
       expand: false,
       builder: (context, scrollCtrl) => Container(
         decoration: const BoxDecoration(
-          color: AppTheme.card,
+          color: AppTheme.bg,
           borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
         child: Column(
@@ -70,15 +69,32 @@ class _CommentsSheetState extends State<CommentsSheet> {
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
-            const SizedBox(height: 10),
-            Text(
-              '${widget.video.commentCount} comments',
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w700,
-                fontSize: 15,
-              ),
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  width: 30,
+                  height: 30,
+                  decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: AppTheme.primaryGradient,
+                  ),
+                  child: const Icon(Icons.comment,
+                      color: Colors.white, size: 16),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  '${widget.video.commentCount} comments',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 15,
+                  ),
+                ),
+              ],
             ),
+            const SizedBox(height: 10),
             const Divider(color: Colors.white10),
             Expanded(
               child: StreamBuilder<List<ChaskaComment>>(
@@ -150,24 +166,44 @@ class _CommentsSheetState extends State<CommentsSheet> {
                     Expanded(
                       child: TextField(
                         controller: _ctrl,
-                        decoration: const InputDecoration(
+                        decoration: InputDecoration(
                           hintText: 'Comment likho...',
+                          filled: true,
+                          fillColor: AppTheme.card,
+                          hintStyle:
+                              const TextStyle(color: AppTheme.muted),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: BorderSide.none,
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 12),
                         ),
                         onSubmitted: (_) => _send(),
                       ),
                     ),
                     const SizedBox(width: 8),
-                    IconButton(
-                      onPressed: _sending ? null : _send,
-                      icon: _sending
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(
-                                  strokeWidth: 2),
-                            )
-                          : const Icon(Icons.send,
-                              color: AppTheme.accent),
+                    Container(
+                      width: 46,
+                      height: 46,
+                      decoration: const BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: AppTheme.primaryGradient,
+                      ),
+                      child: IconButton(
+                        onPressed: _sending ? null : _send,
+                        icon: _sending
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(Icons.send,
+                                color: Colors.white, size: 20),
+                      ),
                     ),
                   ],
                 ),
