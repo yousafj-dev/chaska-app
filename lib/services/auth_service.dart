@@ -33,14 +33,22 @@ class AuthService extends ChangeNotifier {
   bool get isSignedIn => _user != null;
   String? get uid => _user?.uid;
 
-  /// Friendly display name: email prefix, or 'chaska_user'.
+  /// Friendly display name: the profile nickname when set, else the
+  /// email prefix, or 'chaska_user'.
   String get displayName {
+    final dn = _user?.displayName;
+    if (dn != null && dn.trim().isNotEmpty) return dn.trim();
     final email = _user?.email;
     if (email != null && email.contains('@')) {
       return email.split('@').first;
     }
     return 'chaska_user';
   }
+
+  /// Profile photo URL from the FirebaseAuth profile, if set.
+  String? get photoUrl => _user?.photoURL;
+
+  String? get email => _user?.email;
 
   void _ensureReady() {
     if (!firebaseReady) throw Exception(offlineMsg);
@@ -86,6 +94,47 @@ class AuthService extends ChangeNotifier {
       );
       _user = cred.user;
       await _cacheEmail(email.trim());
+      notifyListeners();
+    } on FirebaseAuthException catch (e) {
+      throw Exception(_friendly(e));
+    }
+  }
+
+  /// Sends a Firebase password-reset email. Friendly Roman Urdu
+  /// errors only — never a raw FirebaseAuthException message.
+  Future<void> sendPasswordReset(String email) async {
+    _ensureReady();
+    final trimmed = email.trim();
+    if (!trimmed.contains('@')) {
+      throw Exception('Email sahi likho');
+    }
+    try {
+      await _authSafe.sendPasswordResetEmail(email: trimmed);
+    } on FirebaseAuthException catch (e) {
+      switch (e.code) {
+        case 'user-not-found':
+          throw Exception('Is email se koi account nahi hai');
+        case 'invalid-email':
+          throw Exception('Email sahi likho');
+        case 'network-request-failed':
+          throw Exception('Internet nahi chal raha. Connection check karo.');
+        default:
+          throw Exception('Reset link nahi bhej sakay. Dobara try karo.');
+      }
+    }
+  }
+
+  /// Updates the FirebaseAuth profile (display name + photo URL) and
+  /// refreshes the cached user so the UI picks the new values up.
+  Future<void> updateProfile({String? displayName, String? photoUrl}) async {
+    _ensureReady();
+    final u = _user;
+    if (u == null) throw Exception('Pehle login karo.');
+    try {
+      if (displayName != null) await u.updateDisplayName(displayName);
+      if (photoUrl != null) await u.updatePhotoURL(photoUrl);
+      await u.reload();
+      _user = _authSafe.currentUser;
       notifyListeners();
     } on FirebaseAuthException catch (e) {
       throw Exception(_friendly(e));
