@@ -1,23 +1,36 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:chaska/core/theme/app_theme.dart';
+import 'package:chaska/models/chaska_user.dart';
 import 'package:chaska/models/chaska_video.dart';
 import 'package:chaska/services/auth_service.dart';
 import 'package:chaska/services/firestore_service.dart';
 import 'package:chaska/screens/auth/auth_screen.dart';
+import 'package:chaska/screens/profile/edit_profile_screen.dart';
 
-/// Profile: avatar, username, my videos grid, logout.
+/// Profile: avatar, nickname, bio (from `users/{uid}`), my videos
+/// grid, edit-profile entry, logout.
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthService>();
-    final name = auth.displayName;
+    final uid = auth.uid;
     return Scaffold(
       appBar: AppBar(
-        title: Text('@$name'),
+        title: Text('@${auth.displayName}'),
         actions: [
+          IconButton(
+            tooltip: 'Profile Edit karo',
+            icon: const Icon(Icons.edit_outlined),
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                    builder: (_) => const EditProfileScreen()),
+              );
+            },
+          ),
           IconButton(
             tooltip: 'Logout',
             icon: const Icon(Icons.logout_outlined),
@@ -37,37 +50,90 @@ class ProfileScreen extends StatelessWidget {
       body: Column(
         children: [
           const SizedBox(height: 20),
-          CircleAvatar(
-            radius: 44,
-            backgroundColor: AppTheme.accent.withOpacity(0.2),
-            child: Text(
-              name.isNotEmpty ? name[0].toUpperCase() : '?',
-              style: const TextStyle(
-                fontSize: 36,
-                fontWeight: FontWeight.w800,
-                color: AppTheme.accent,
-              ),
-            ),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            '@$name',
-            style: const TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-              color: Colors.white,
-            ),
-          ),
-          const SizedBox(height: 4),
-          const Text(
-            'Meri videos',
-            style: TextStyle(color: AppTheme.muted, fontSize: 13),
-          ),
+          if (uid != null && AuthService.firebaseReady)
+            StreamBuilder<ChaskaUser?>(
+              stream: FirestoreService.instance.userProfile(uid),
+              builder: (context, snap) => _header(context, auth, snap.data),
+            )
+          else
+            _header(context, auth, null),
           const SizedBox(height: 16),
           const Divider(color: Colors.white10, height: 1),
           Expanded(child: _myVideosGrid(auth)),
         ],
       ),
+    );
+  }
+
+  Widget _header(BuildContext context, AuthService auth, ChaskaUser? profile) {
+    final name = (profile != null && profile.displayName.isNotEmpty)
+        ? profile.displayName
+        : auth.displayName;
+    final photo = (profile != null && profile.photoUrl.isNotEmpty)
+        ? profile.photoUrl
+        : (auth.photoUrl ?? '');
+    final bio = profile?.bio ?? '';
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        CircleAvatar(
+          radius: 44,
+          backgroundColor: AppTheme.accent.withOpacity(0.2),
+          backgroundImage: photo.isNotEmpty ? NetworkImage(photo) : null,
+          child: photo.isNotEmpty
+              ? null
+              : Text(
+                  name.isNotEmpty ? name[0].toUpperCase() : '?',
+                  style: const TextStyle(
+                    fontSize: 36,
+                    fontWeight: FontWeight.w800,
+                    color: AppTheme.accent,
+                  ),
+                ),
+        ),
+        const SizedBox(height: 10),
+        Text(
+          '@$name',
+          style: const TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+            color: Colors.white,
+          ),
+        ),
+        if (bio.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 32),
+            child: Text(
+              bio,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.white70, fontSize: 13),
+            ),
+          ),
+        ],
+        const SizedBox(height: 12),
+        OutlinedButton.icon(
+          onPressed: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const EditProfileScreen()),
+            );
+          },
+          icon: const Icon(Icons.edit_outlined, size: 16),
+          label: const Text('Profile Edit karo'),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: Colors.white,
+            side: const BorderSide(color: Colors.white24),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+        const Text(
+          'Meri videos',
+          style: TextStyle(color: AppTheme.muted, fontSize: 13),
+        ),
+      ],
     );
   }
 
