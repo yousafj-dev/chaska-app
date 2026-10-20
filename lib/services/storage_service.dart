@@ -16,6 +16,7 @@ class StorageService {
   static const String _cloudName = 'q76vpymr';
   static const String _uploadPreset = 'lhmgywrj';
   static const String _folder = 'chaska_videos';
+  static const String _profileFolder = 'chaska_profiles';
 
   final Dio _dio = Dio(
     BaseOptions(
@@ -32,22 +33,57 @@ class StorageService {
     File file, {
     void Function(double progress)? onProgress,
   }) async {
-    if (!AuthService.firebaseReady) throw Exception(AuthService.offlineMsg);
-    final uid = AuthService.instance.uid;
-    if (uid == null) throw Exception('Upload ke liye pehle login karo.');
+    _ensureCanUpload();
+    return _upload(
+      file,
+      resourceType: 'video',
+      folder: _folder,
+      failMsg: 'Upload fail ho gaya, dobara koshish karo.',
+      onProgress: onProgress,
+    );
+  }
 
+  /// Uploads a profile photo and returns its Cloudinary `secure_url`.
+  Future<String> uploadProfileImage(
+    File file, {
+    void Function(double progress)? onProgress,
+  }) async {
+    _ensureCanUpload();
+    return _upload(
+      file,
+      resourceType: 'image',
+      folder: _profileFolder,
+      failMsg: 'Photo upload nahi ho saki, dobara koshish karo.',
+      onProgress: onProgress,
+    );
+  }
+
+  void _ensureCanUpload() {
+    if (!AuthService.firebaseReady) throw Exception(AuthService.offlineMsg);
+    if (AuthService.instance.uid == null) {
+      throw Exception('Upload ke liye pehle login karo.');
+    }
+  }
+
+  Future<String> _upload(
+    File file, {
+    required String resourceType,
+    required String folder,
+    required String failMsg,
+    void Function(double progress)? onProgress,
+  }) async {
     final formData = FormData.fromMap({
       'file': await MultipartFile.fromFile(
         file.path,
         filename: file.path.split('/').last,
       ),
       'upload_preset': _uploadPreset,
-      'folder': _folder,
+      'folder': folder,
     });
 
     try {
       final resp = await _dio.post(
-        'https://api.cloudinary.com/v1_1/$_cloudName/video/upload',
+        'https://api.cloudinary.com/v1_1/$_cloudName/$resourceType/upload',
         data: formData,
         onSendProgress: (sent, total) {
           if (total > 0) onProgress?.call(sent / total);
@@ -57,13 +93,13 @@ class StorageService {
       if (resp.statusCode == 200 && url != null && url.isNotEmpty) {
         return url;
       }
-      debugPrint('uploadVideo unexpected response: ${resp.statusCode}');
-      throw Exception('Upload fail ho gaya, dobara koshish karo.');
+      debugPrint('upload unexpected response: ${resp.statusCode}');
+      throw Exception(failMsg);
     } on DioException catch (e) {
-      debugPrint('uploadVideo failed: ${e.type}');
+      debugPrint('upload failed: ${e.type}');
       if (e.response != null) {
         // Server replied with an error (e.g. bad preset) — not a network issue.
-        throw Exception('Upload fail ho gaya, dobara koshish karo.');
+        throw Exception(failMsg);
       }
       throw Exception(
           'Internet masla — upload nahi ho saka, dobara koshish karo.');
