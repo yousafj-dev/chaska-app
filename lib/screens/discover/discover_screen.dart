@@ -13,15 +13,15 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
   final _search = TextEditingController();
 
   static const _tags = [
-    ('#comedy', 'Mazahiya videos'),
-    ('#cricket', 'Cricket ke deewane'),
-    ('#cooking', 'Khanay ki recipes'),
-    ('#study', 'Parhai ke tips'),
-    ('#music', 'Naye ganay'),
-    ('#vlog', 'Rozana ki zindagi'),
-    ('#sports', 'Khel khiladi'),
+    ('#comedy', 'Funny videos'),
+    ('#cricket', 'For cricket lovers'),
+    ('#cooking', 'Food recipes'),
+    ('#study', 'Study tips'),
+    ('#music', 'New songs'),
+    ('#vlog', 'Daily life'),
+    ('#sports', 'Sports and games'),
     ('#fashion', 'Style ideas'),
-    ('#pets', 'Pyare janwar'),
+    ('#pets', 'Cute animals'),
   ];
 
   @override
@@ -41,13 +41,13 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
             child: TextField(
               controller: _search,
               decoration: const InputDecoration(
-                hintText: 'Search karo...',
+                hintText: 'Search...',
                 prefixIcon: Icon(Icons.search, color: AppTheme.muted),
               ),
               onSubmitted: (_) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                      content: Text('Search jald aa raha hai.')),
+                      content: Text('Search is coming soon.')),
                 );
               },
             ),
@@ -84,7 +84,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                   onTap: () {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
-                          content: Text('$tag jald aa raha hai.')),
+                          content: Text('$tag is coming soon.')),
                     );
                   },
                   child: Container(

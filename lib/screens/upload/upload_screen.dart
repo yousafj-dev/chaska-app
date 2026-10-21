@@ -9,7 +9,7 @@ import 'package:chaska/services/firestore_service.dart';
 import 'package:chaska/services/storage_service.dart';
 
 /// Upload: pick a video, preview it, add a caption, upload to
-/// Firebase Storage + save the Firestore doc. Requires login.
+/// Cloudinary + save the Firestore doc. Requires login.
 class UploadScreen extends StatefulWidget {
   const UploadScreen({super.key});
 
@@ -63,12 +63,12 @@ class _UploadScreenState extends State<UploadScreen> {
       debugPrint('pickVideo PlatformException: ${e.code}');
       if (!mounted) return;
       setState(() => _error = e.code == 'already_active'
-          ? 'Picker pehle se khula hai, ek lamha ruko.'
-          : 'Video choose nahi ho saki, dobara try karo.');
+          ? 'The picker is already open, please wait a moment.'
+          : 'Could not pick a video. Please try again.');
     } catch (e) {
       debugPrint('pickVideo failed: $e');
       if (!mounted) return;
-      setState(() => _error = 'Video choose nahi ho saki, dobara try karo.');
+      setState(() => _error = 'Could not pick a video. Please try again.');
     } finally {
       _picking = false;
     }
@@ -76,13 +76,13 @@ class _UploadScreenState extends State<UploadScreen> {
 
   Future<void> _upload() async {
     if (_picked == null) {
-      setState(() => _error = 'Pehle video choose karo.');
+      setState(() => _error = 'Please choose a video first.');
       return;
     }
     final auth = AuthService.instance;
     if (!AuthService.firebaseReady || !auth.isSignedIn) {
       setState(() =>
-          _error = 'Upload ke liye pehle login karo.');
+          _error = 'Please log in first to upload.');
       return;
     }
     setState(() {
@@ -105,7 +105,7 @@ class _UploadScreenState extends State<UploadScreen> {
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Video upload ho gayi!')),
+        const SnackBar(content: Text('Video uploaded successfully!')),
       );
       Navigator.of(context).pop();
     } catch (e) {
@@ -119,7 +119,7 @@ class _UploadScreenState extends State<UploadScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Nayi video')),
+      appBar: AppBar(title: const Text('New video')),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -134,7 +134,7 @@ class _UploadScreenState extends State<UploadScreen> {
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: const Text(
-                  'Offline mode: Firebase setup ke baad upload chalega.',
+                  'Offline mode: uploads will work once Firebase is set up.',
                   style: TextStyle(color: Colors.orange, fontSize: 13),
                   textAlign: TextAlign.center,
                 ),
@@ -161,12 +161,12 @@ class _UploadScreenState extends State<UploadScreen> {
                           Icon(Icons.video_call_outlined,
                               size: 56, color: AppTheme.accent),
                           SizedBox(height: 10),
-                          Text('Video choose karo',
+                          Text('Choose a video',
                               style: TextStyle(
                                   color: Colors.white,
                                   fontWeight: FontWeight.w600)),
                           SizedBox(height: 4),
-                          Text('Gallery ya camera (60 sec tak)',
+                          Text('From gallery or camera (up to 60 sec)',
                               style: TextStyle(
                                   color: AppTheme.muted, fontSize: 12)),
                         ],
@@ -179,7 +179,7 @@ class _UploadScreenState extends State<UploadScreen> {
               maxLines: 3,
               maxLength: 150,
               decoration: const InputDecoration(
-                hintText: 'Caption likho... #chaska',
+                hintText: 'Write a caption... #chaska',
               ),
             ),
             if (_error != null) ...[
@@ -199,7 +199,7 @@ class _UploadScreenState extends State<UploadScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                'Upload ho rahi hai... ${(_progress * 100).toInt()}%',
+                'Uploading... ${(_progress * 100).toInt()}%',
                 textAlign: TextAlign.center,
                 style:
                     const TextStyle(color: AppTheme.muted, fontSize: 13),
@@ -209,7 +209,7 @@ class _UploadScreenState extends State<UploadScreen> {
             ElevatedButton.icon(
               onPressed: _uploading ? null : _upload,
               icon: const Icon(Icons.cloud_upload_outlined),
-              label: const Text('Upload karo'),
+              label: const Text('Upload'),
             ),
           ],
         ),
@@ -231,7 +231,7 @@ class _UploadScreenState extends State<UploadScreen> {
             ListTile(
               leading: const Icon(Icons.photo_library_outlined,
                   color: AppTheme.accent),
-              title: const Text('Gallery se choose karo',
+              title: const Text('Choose from gallery',
                   style: TextStyle(color: Colors.white)),
               onTap: () {
                 Navigator.pop(context);
@@ -241,7 +241,7 @@ class _UploadScreenState extends State<UploadScreen> {
             ListTile(
               leading: const Icon(Icons.videocam_outlined,
                   color: AppTheme.accent),
-              title: const Text('Camera se banao',
+              title: const Text('Record with camera',
                   style: TextStyle(color: Colors.white)),
               onTap: () {
                 Navigator.pop(context);

@@ -109,7 +109,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
                   if (list.isEmpty) {
                     return const Center(
                       child: Text(
-                        'Abhi koi comment nahi.\nPehla comment tum karo!',
+                        'No comments yet.\nBe the first to comment!',
                         textAlign: TextAlign.center,
                         style: TextStyle(color: AppTheme.muted),
                       ),
@@ -167,7 +167,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
                       child: TextField(
                         controller: _ctrl,
                         decoration: InputDecoration(
-                          hintText: 'Comment likho...',
+                          hintText: 'Write a comment...',
                           filled: true,
                           fillColor: AppTheme.card,
                           hintStyle:

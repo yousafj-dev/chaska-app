@@ -17,6 +17,7 @@ class StorageService {
   static const String _uploadPreset = 'lhmgywrj';
   static const String _folder = 'chaska_videos';
   static const String _profileFolder = 'chaska_profiles';
+  static const String _storyFolder = 'chaska_stories';
 
   final Dio _dio = Dio(
     BaseOptions(
@@ -28,7 +29,7 @@ class StorageService {
 
   /// Uploads [file] and returns its public Cloudinary URL.
   /// Calls [onProgress] with 0.0–1.0 as bytes transfer.
-  /// Throws an [Exception] with a friendly Roman Urdu message on failure.
+  /// Throws an [Exception] with a friendly English message on failure.
   Future<String> uploadVideo(
     File file, {
     void Function(double progress)? onProgress,
@@ -38,7 +39,7 @@ class StorageService {
       file,
       resourceType: 'video',
       folder: _folder,
-      failMsg: 'Upload fail ho gaya, dobara koshish karo.',
+      failMsg: 'Upload failed. Please try again.',
       onProgress: onProgress,
     );
   }
@@ -53,7 +54,24 @@ class StorageService {
       file,
       resourceType: 'image',
       folder: _profileFolder,
-      failMsg: 'Photo upload nahi ho saki, dobara koshish karo.',
+      failMsg: 'Could not upload the photo. Please try again.',
+      onProgress: onProgress,
+    );
+  }
+
+  /// Uploads story media (photo or video) and returns its
+  /// Cloudinary `secure_url`.
+  Future<String> uploadStoryMedia(
+    File file, {
+    required bool isVideo,
+    void Function(double progress)? onProgress,
+  }) async {
+    _ensureCanUpload();
+    return _upload(
+      file,
+      resourceType: isVideo ? 'video' : 'image',
+      folder: _storyFolder,
+      failMsg: 'Could not upload your story. Please try again.',
       onProgress: onProgress,
     );
   }
@@ -61,7 +79,7 @@ class StorageService {
   void _ensureCanUpload() {
     if (!AuthService.firebaseReady) throw Exception(AuthService.offlineMsg);
     if (AuthService.instance.uid == null) {
-      throw Exception('Upload ke liye pehle login karo.');
+      throw Exception('Please log in first to upload.');
     }
   }
 
@@ -102,7 +120,7 @@ class StorageService {
         throw Exception(failMsg);
       }
       throw Exception(
-          'Internet masla — upload nahi ho saka, dobara koshish karo.');
+          'Internet problem — the upload could not finish. Please try again.');
     }
   }
 }

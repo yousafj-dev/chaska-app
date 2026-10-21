@@ -7,7 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// Works in two modes:
 /// - Firebase ready: real FirebaseAuth (email sign-in/up, sign-out).
 /// - Firebase NOT ready (no google-services.json yet): every auth call
-///   throws a friendly Roman-Urdu message instead of a raw Firebase error,
+///   throws a friendly English message instead of a raw Firebase error,
 ///   so the app never crashes and screens stay usable.
 class AuthService extends ChangeNotifier {
   AuthService._();
@@ -18,7 +18,7 @@ class AuthService extends ChangeNotifier {
   static bool firebaseReady = false;
 
   static const String offlineMsg =
-      'Internet/Firebase se rabta nahi ho saka. Pehle Firebase setup hoga, phir login chalega.';
+      'Could not connect. Please check your internet connection and try again.';
 
   FirebaseAuth? _auth;
   User? _user;
@@ -100,26 +100,28 @@ class AuthService extends ChangeNotifier {
     }
   }
 
-  /// Sends a Firebase password-reset email. Friendly Roman Urdu
+  /// Sends a Firebase password-reset email. Friendly English
   /// errors only — never a raw FirebaseAuthException message.
   Future<void> sendPasswordReset(String email) async {
     _ensureReady();
     final trimmed = email.trim();
     if (!trimmed.contains('@')) {
-      throw Exception('Email sahi likho');
+      throw Exception('Please enter a valid email address.');
     }
     try {
       await _authSafe.sendPasswordResetEmail(email: trimmed);
     } on FirebaseAuthException catch (e) {
       switch (e.code) {
         case 'user-not-found':
-          throw Exception('Is email se koi account nahi hai');
+          throw Exception('No account exists for this email.');
         case 'invalid-email':
-          throw Exception('Email sahi likho');
+          throw Exception('Please enter a valid email address.');
         case 'network-request-failed':
-          throw Exception('Internet nahi chal raha. Connection check karo.');
+          throw Exception(
+              'No internet connection. Please check and try again.');
         default:
-          throw Exception('Reset link nahi bhej sakay. Dobara try karo.');
+          throw Exception(
+              'Could not send the reset link. Please try again.');
       }
     }
   }
@@ -129,7 +131,7 @@ class AuthService extends ChangeNotifier {
   Future<void> updateProfile({String? displayName, String? photoUrl}) async {
     _ensureReady();
     final u = _user;
-    if (u == null) throw Exception('Pehle login karo.');
+    if (u == null) throw Exception('Please log in first.');
     try {
       if (displayName != null) await u.updateDisplayName(displayName);
       if (photoUrl != null) await u.updatePhotoURL(photoUrl);
@@ -175,21 +177,21 @@ class AuthService extends ChangeNotifier {
   String _friendly(FirebaseAuthException e) {
     switch (e.code) {
       case 'user-not-found':
-        return 'Ye email registered nahi hai. Pehle account banao.';
+        return 'This email is not registered. Please create an account first.';
       case 'wrong-password':
-        return 'Password ghalat hai. Dobara try karo.';
+        return 'Incorrect password. Please try again.';
       case 'invalid-credential':
-        return 'Email ya password ghalat hai.';
+        return 'Email or password is incorrect.';
       case 'email-already-in-use':
-        return 'Ye email pehle se registered hai. Login karo.';
+        return 'This email is already registered. Please log in.';
       case 'weak-password':
-        return 'Password kam az kam 6 harf ka rakho.';
+        return 'Password must be at least 6 characters.';
       case 'invalid-email':
-        return 'Email theek likho.';
+        return 'Please enter a valid email address.';
       case 'network-request-failed':
-        return 'Internet nahi chal raha. Connection check karo.';
+        return 'No internet connection. Please check and try again.';
       default:
-        return 'Kuch ghalat ho gaya (${e.code}). Dobara try karo.';
+        return 'Something went wrong (${e.code}). Please try again.';
     }
   }
 }

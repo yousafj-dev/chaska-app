@@ -7,9 +7,11 @@ import 'package:chaska/services/auth_service.dart';
 import 'package:chaska/services/firestore_service.dart';
 import 'package:chaska/screens/auth/auth_screen.dart';
 import 'package:chaska/screens/profile/edit_profile_screen.dart';
+import 'package:chaska/widgets/video_feed.dart';
 
-/// Profile: avatar, nickname, bio (from `users/{uid}`), my videos
-/// grid, edit-profile entry, logout.
+/// Profile: avatar, nickname, bio (from `users/{uid}`), stats
+/// (videos + following counts), my videos grid with thumbnails,
+/// edit-profile entry, logout.
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
 
@@ -22,7 +24,7 @@ class ProfileScreen extends StatelessWidget {
         title: Text('@${auth.displayName}'),
         actions: [
           IconButton(
-            tooltip: 'Profile Edit karo',
+            tooltip: 'Edit profile',
             icon: const Icon(Icons.edit_outlined),
             onPressed: () {
               Navigator.of(context).push(
@@ -32,7 +34,7 @@ class ProfileScreen extends StatelessWidget {
             },
           ),
           IconButton(
-            tooltip: 'Logout',
+            tooltip: 'Log out',
             icon: const Icon(Icons.logout_outlined),
             onPressed: () async {
               await context.read<AuthService>().signOut();
@@ -57,9 +59,23 @@ class ProfileScreen extends StatelessWidget {
             )
           else
             _header(context, auth, null),
-          const SizedBox(height: 16),
+          const SizedBox(height: 14),
           const Divider(color: Colors.white10, height: 1),
-          Expanded(child: _myVideosGrid(auth)),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'My videos',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 15,
+                ),
+              ),
+            ),
+          ),
+          Expanded(child: _myVideosGrid(context, auth)),
         ],
       ),
     );
@@ -73,6 +89,7 @@ class ProfileScreen extends StatelessWidget {
         ? profile.photoUrl
         : (auth.photoUrl ?? '');
     final bio = profile?.bio ?? '';
+    final uid = auth.uid;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -112,6 +129,24 @@ class ProfileScreen extends StatelessWidget {
           ),
         ],
         const SizedBox(height: 12),
+        if (uid != null && AuthService.firebaseReady)
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              StreamBuilder<List<ChaskaVideo>>(
+                stream: FirestoreService.instance.myVideos(uid),
+                builder: (context, snap) =>
+                    _stat('${snap.data?.length ?? 0}', 'Videos'),
+              ),
+              const SizedBox(width: 36),
+              StreamBuilder<int>(
+                stream: FirestoreService.instance.followingCount(uid),
+                builder: (context, snap) =>
+                    _stat('${snap.data ?? 0}', 'Following'),
+              ),
+            ],
+          ),
+        const SizedBox(height: 12),
         OutlinedButton.icon(
           onPressed: () {
             Navigator.of(context).push(
@@ -119,7 +154,7 @@ class ProfileScreen extends StatelessWidget {
             );
           },
           icon: const Icon(Icons.edit_outlined, size: 16),
-          label: const Text('Profile Edit karo'),
+          label: const Text('Edit profile'),
           style: OutlinedButton.styleFrom(
             foregroundColor: Colors.white,
             side: const BorderSide(color: Colors.white24),
@@ -128,23 +163,39 @@ class ProfileScreen extends StatelessWidget {
             ),
           ),
         ),
-        const SizedBox(height: 10),
-        const Text(
-          'Meri videos',
-          style: TextStyle(color: AppTheme.muted, fontSize: 13),
+      ],
+    );
+  }
+
+  Widget _stat(String value, String label) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          value,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 16,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          label,
+          style: const TextStyle(color: AppTheme.muted, fontSize: 12),
         ),
       ],
     );
   }
 
-  Widget _myVideosGrid(AuthService auth) {
+  Widget _myVideosGrid(BuildContext context, AuthService auth) {
     final uid = auth.uid;
     if (!AuthService.firebaseReady || uid == null) {
       return const Center(
         child: Padding(
           padding: EdgeInsets.all(32),
           child: Text(
-            'Login ke baad tumhari videos yahan dikhengi.',
+            'Log in to see your videos here.',
             textAlign: TextAlign.center,
             style: TextStyle(color: AppTheme.muted),
           ),
@@ -157,13 +208,25 @@ class ProfileScreen extends StatelessWidget {
         if (snap.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         }
+        if (snap.hasError) {
+          return const Center(
+            child: Padding(
+              padding: EdgeInsets.all(32),
+              child: Text(
+                'Could not load your videos. Please try again later.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: AppTheme.muted),
+              ),
+            ),
+          );
+        }
         final videos = snap.data ?? [];
         if (videos.isEmpty) {
           return const Center(
             child: Padding(
               padding: EdgeInsets.all(32),
               child: Text(
-                'Abhi koi video upload nahi ki.\nNeeche + dabao aur pehli video banao!',
+                'You have not uploaded any videos yet.\nTap + below and post your first video!',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: AppTheme.muted),
               ),
@@ -182,42 +245,75 @@ class ProfileScreen extends StatelessWidget {
           itemCount: videos.length,
           itemBuilder: (context, i) {
             final v = videos[i];
-            return Container(
-              decoration: BoxDecoration(
-                color: AppTheme.card,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              clipBehavior: Clip.antiAlias,
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  const Center(
-                    child: Icon(Icons.play_arrow,
-                        color: Colors.white54, size: 36),
-                  ),
-                  Positioned(
-                    left: 6,
-                    bottom: 6,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.favorite,
-                            size: 13, color: Colors.white70),
-                        const SizedBox(width: 3),
-                        Text(
-                          '${v.likes}',
-                          style: const TextStyle(
-                              color: Colors.white70, fontSize: 11),
-                        ),
-                      ],
+            return GestureDetector(
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => Scaffold(
+                      backgroundColor: Colors.black,
+                      appBar: AppBar(
+                        backgroundColor: Colors.black,
+                        iconTheme:
+                            const IconThemeData(color: Colors.white),
+                      ),
+                      body: PagedVideoFeed(
+                          videos: videos, initialPage: i),
                     ),
                   ),
-                ],
-              ),
+                );
+              },
+              child: _thumbCell(v),
             );
           },
         );
       },
+    );
+  }
+
+  Widget _thumbCell(ChaskaVideo v) {
+    final thumb = v.thumbUrl;
+    return Container(
+      decoration: BoxDecoration(
+        color: AppTheme.card,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          if (thumb.isNotEmpty)
+            Image.network(
+              thumb,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => const Center(
+                child: Icon(Icons.play_arrow,
+                    color: Colors.white54, size: 36),
+              ),
+            )
+          else
+            const Center(
+              child:
+                  Icon(Icons.play_arrow, color: Colors.white54, size: 36),
+            ),
+          Positioned(
+            left: 6,
+            bottom: 6,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.favorite,
+                    size: 13, color: Colors.white70),
+                const SizedBox(width: 3),
+                Text(
+                  '${v.likes}',
+                  style: const TextStyle(
+                      color: Colors.white70, fontSize: 11),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

@@ -6,18 +6,27 @@ import 'package:chaska/models/chaska_user.dart';
 import 'package:chaska/models/chaska_video.dart';
 import 'package:chaska/services/auth_service.dart';
 import 'package:chaska/services/firestore_service.dart';
+import 'package:chaska/screens/profile/public_profile_screen.dart';
 import 'package:chaska/widgets/comments_sheet.dart';
 
 /// One full-screen video page in the feed: autoplaying video,
 /// double-tap to like, right-side action column, bottom caption.
+///
+/// Player lifecycle (feed-paging fix): the controller is bound to
+/// this card's video id. It is created when the page becomes the
+/// active page, re-created if the widget is ever re-bound to a
+/// different video, paused when the page stops being active, and
+/// disposed with the widget. An async init that finishes after the
+/// card moved on to another video is discarded, so a stale player
+/// can never bleed into the wrong page.
 class VideoCard extends StatefulWidget {
   final ChaskaVideo video;
-  final bool autoplay;
+  final bool isActive;
 
   const VideoCard({
     super.key,
     required this.video,
-    required this.autoplay,
+    required this.isActive,
   });
 
   @override
@@ -26,58 +35,80 @@ class VideoCard extends StatefulWidget {
 
 class _VideoCardState extends State<VideoCard> {
   VideoPlayerController? _ctrl;
-  bool _ready = false;
+
+  /// The video id [_ctrl] (or the in-flight init) belongs to.
+  String? _boundId;
+  bool _initializing = false;
   bool _showHeart = false;
   bool _liking = false;
 
   @override
   void initState() {
     super.initState();
-    _init();
+    if (widget.isActive) _ensurePlayer();
   }
 
   @override
   void didUpdateWidget(VideoCard old) {
     super.didUpdateWidget(old);
-    if (old.autoplay != widget.autoplay) _applyPlayState();
+    if (old.video.id != widget.video.id) {
+      // Re-bound to a different video: drop the old player entirely.
+      _teardownPlayer();
+      if (widget.isActive) _ensurePlayer();
+      return;
+    }
+    if (old.isActive != widget.isActive) {
+      if (widget.isActive) {
+        _ensurePlayer();
+        _ctrl?.play();
+      } else {
+        _ctrl?.pause();
+      }
+    }
   }
 
-  Future<void> _init() async {
+  Future<void> _ensurePlayer() async {
+    if (_boundId == widget.video.id && (_ctrl != null || _initializing)) {
+      return;
+    }
     final url = widget.video.videoUrl;
     if (url.isEmpty) return;
+    final id = widget.video.id;
+    _boundId = id;
+    _initializing = true;
     try {
       final c = VideoPlayerController.networkUrl(Uri.parse(url));
       await c.initialize();
       await c.setLooping(true);
-      if (!mounted) {
+      if (!mounted || _boundId != id) {
+        // The card moved on while this was loading — discard it.
         c.dispose();
         return;
       }
-      setState(() {
-        _ctrl = c;
-        _ready = true;
-      });
-      _applyPlayState();
+      setState(() => _ctrl = c);
+      if (widget.isActive) c.play();
     } catch (e) {
       debugPrint('VideoCard init failed: $e');
+      if (_boundId == id) _boundId = null;
+    } finally {
+      if (_boundId == id) _initializing = false;
     }
   }
 
-  void _applyPlayState() {
-    final c = _ctrl;
-    if (c == null || !_ready) return;
-    if (widget.autoplay) {
-      c.play();
-    } else {
-      c.pause();
-    }
+  void _teardownPlayer() {
+    _ctrl?.dispose();
+    _ctrl = null;
+    _boundId = null;
+    _initializing = false;
   }
 
   @override
   void dispose() {
-    _ctrl?.dispose();
+    _teardownPlayer();
     super.dispose();
   }
+
+  bool get _ready => _ctrl != null && _ctrl!.value.isInitialized;
 
   Future<void> _onDoubleTap() async {
     if (_liking) return;
@@ -90,15 +121,13 @@ class _VideoCardState extends State<VideoCard> {
       if (!AuthService.firebaseReady || !auth.isSignedIn) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Like ke liye pehle login karo.')),
+            const SnackBar(
+                content: Text('Please log in first to like.')),
           );
         }
         return;
       }
-      final nowLiked = await FirestoreService.instance.toggleLike(widget.video);
-      if (nowLiked && mounted) {
-        // Feed refreshes via stream; heart pop is instant feedback.
-      }
+      await FirestoreService.instance.toggleLike(widget.video);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -130,8 +159,18 @@ class _VideoCardState extends State<VideoCard> {
     final caption = widget.video.caption.trim();
     final text = caption.isNotEmpty
         ? '$caption\n${widget.video.videoUrl}'
-        : 'Chaska par ye video dekho!\n${widget.video.videoUrl}';
+        : 'Watch this video on Chaska!\n${widget.video.videoUrl}';
     Share.share(text);
+  }
+
+  void _openAuthorProfile() {
+    final uid = widget.video.uid;
+    if (uid.isEmpty) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => PublicProfileScreen(uid: uid),
+      ),
+    );
   }
 
   @override
@@ -154,15 +193,15 @@ class _VideoCardState extends State<VideoCard> {
         fit: StackFit.expand,
         children: [
           Container(color: Colors.black),
-          if (_ready && _ctrl != null)
-            Center(child: AspectRatio(
-              aspectRatio: _ctrl!.value.aspectRatio,
-              child: VideoPlayer(_ctrl!),
-            ))
+          if (_ready)
+            Center(
+              child: AspectRatio(
+                aspectRatio: _ctrl!.value.aspectRatio,
+                child: VideoPlayer(_ctrl!),
+              ),
+            )
           else
-            const Center(
-              child: CircularProgressIndicator(color: AppTheme.accent),
-            ),
+            _placeholder(),
           // Double-tap heart pop
           if (_showHeart)
             const Center(
@@ -202,7 +241,7 @@ class _VideoCardState extends State<VideoCard> {
               ],
             ),
           ),
-          // Bottom caption + username
+          // Bottom caption + username (tap name → creator profile)
           Positioned(
             left: 14,
             right: 80,
@@ -211,12 +250,15 @@ class _VideoCardState extends State<VideoCard> {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  '@${widget.video.username}',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 16,
+                GestureDetector(
+                  onTap: _openAuthorProfile,
+                  child: Text(
+                    '@${widget.video.username}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 16,
+                    ),
                   ),
                 ),
                 if (widget.video.caption.isNotEmpty) ...[
@@ -237,9 +279,29 @@ class _VideoCardState extends State<VideoCard> {
     );
   }
 
-  /// Uploader avatar at the top of the rail. Reads the live profile
-  /// (photo + nickname) from `users/{uid}`, falling back to the
-  /// username stored on the video.
+  /// Thumbnail + spinner shown while this page's player loads, so
+  /// every page is visually distinct even before playback starts.
+  Widget _placeholder() {
+    final thumb = widget.video.thumbUrl;
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        if (thumb.isNotEmpty)
+          Image.network(
+            thumb,
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+          ),
+        const Center(
+          child: CircularProgressIndicator(color: AppTheme.accent),
+        ),
+      ],
+    );
+  }
+
+  /// Uploader avatar at the top of the rail (tap → creator profile).
+  /// Reads the live profile (photo + nickname) from `users/{uid}`,
+  /// falling back to the username stored on the video.
   Widget _ownerAvatar() {
     return StreamBuilder<ChaskaUser?>(
       stream: FirestoreService.instance.userProfile(widget.video.uid),
@@ -249,27 +311,30 @@ class _VideoCardState extends State<VideoCard> {
         final name = (profile != null && profile.displayName.isNotEmpty)
             ? profile.displayName
             : widget.video.username;
-        return Container(
-          width: 48,
-          height: 48,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            border: Border.all(color: Colors.white, width: 1.5),
-          ),
-          child: CircleAvatar(
-            backgroundColor: AppTheme.card,
-            backgroundImage:
-                photo.isNotEmpty ? NetworkImage(photo) : null,
-            child: photo.isNotEmpty
-                ? null
-                : Text(
-                    name.isNotEmpty ? name[0].toUpperCase() : '?',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 18,
+        return GestureDetector(
+          onTap: _openAuthorProfile,
+          child: Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white, width: 1.5),
+            ),
+            child: CircleAvatar(
+              backgroundColor: AppTheme.card,
+              backgroundImage:
+                  photo.isNotEmpty ? NetworkImage(photo) : null,
+              child: photo.isNotEmpty
+                  ? null
+                  : Text(
+                      name.isNotEmpty ? name[0].toUpperCase() : '?',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 18,
+                      ),
                     ),
-                  ),
+            ),
           ),
         );
       },

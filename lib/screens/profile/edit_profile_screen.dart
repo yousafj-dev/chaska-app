@@ -58,7 +58,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   String _friendlyErr(Object e) {
     final msg = e.toString().replaceFirst('Exception: ', '');
     if (msg.startsWith('PlatformException')) {
-      return 'Photo select nahi ho saki, dobara try karo.';
+      return 'Could not select a photo. Please try again.';
     }
     return msg;
   }
@@ -90,13 +90,13 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   Future<void> _save() async {
     final name = _name.text.trim();
     if (name.isEmpty) {
-      setState(() => _error = 'Naam zaroor likho.');
+      setState(() => _error = 'Please enter your name.');
       return;
     }
     final auth = context.read<AuthService>();
     final uid = auth.uid;
     if (uid == null) {
-      setState(() => _error = 'Pehle login karo.');
+      setState(() => _error = 'Please log in first.');
       return;
     }
     setState(() {
@@ -113,7 +113,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       await auth.updateProfile(displayName: name, photoUrl: _photoUrl);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Profile save ho gaya!')),
+        const SnackBar(content: Text('Profile saved!')),
       );
       Navigator.of(context).pop();
     } catch (e) {
@@ -126,7 +126,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Profile Edit karo')),
+      appBar: AppBar(title: const Text('Edit profile')),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : SingleChildScrollView(
@@ -191,7 +191,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                   ),
                   const SizedBox(height: 8),
                   const Text(
-                    'Photo badalne ke liye photo par tap karo',
+                    'Tap the photo to change it',
                     textAlign: TextAlign.center,
                     style: TextStyle(color: AppTheme.muted, fontSize: 12),
                   ),
@@ -208,7 +208,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                   TextField(
                     controller: _name,
                     decoration: const InputDecoration(
-                      hintText: 'Apna naam / nickname likho',
+                      hintText: 'Enter your name / nickname',
                     ),
                   ),
                   const SizedBox(height: 18),
@@ -226,7 +226,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     maxLines: 3,
                     maxLength: 120,
                     decoration: const InputDecoration(
-                      hintText: 'Apne baare me kuch likho...',
+                      hintText: 'Write something about yourself...',
                     ),
                   ),
                   if (_error != null) ...[
@@ -250,7 +250,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                               color: Colors.white,
                             ),
                           )
-                        : const Text('Save karo'),
+                        : const Text('Save'),
                   ),
                 ],
               ),

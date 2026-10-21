@@ -27,6 +27,17 @@ class ChaskaVideo {
   bool likedByMe(String? myUid) =>
       myUid != null && likedBy.contains(myUid);
 
+  /// Cloudinary frame-grab thumbnail for this video: first frame
+  /// (so_0) at 300px wide, as a .jpg. Empty when the URL is not a
+  /// Cloudinary upload URL.
+  String get thumbUrl {
+    if (!videoUrl.contains('/upload/')) return '';
+    var t = videoUrl.replaceFirst('/upload/', '/upload/so_0,w_300/');
+    final dot = t.lastIndexOf('.');
+    if (dot > 0) t = '${t.substring(0, dot)}.jpg';
+    return t;
+  }
+
   factory ChaskaVideo.fromDoc(DocumentSnapshot doc) {
     final d = doc.data() as Map<String, dynamic>? ?? {};
     DateTime ts;

@@ -73,7 +73,7 @@ class _SplashScreenState extends State<SplashScreen> {
             ),
             const SizedBox(height: 8),
             const Text(
-              'Dekho, banao, chaska lo',
+              'Watch, create, enjoy',
               style: TextStyle(
                 fontSize: 15,
                 color: AppTheme.muted,

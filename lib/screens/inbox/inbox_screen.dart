@@ -31,7 +31,7 @@ class InboxScreen extends StatelessWidget {
               ),
               const SizedBox(height: 20),
               const Text(
-                'Koi notification nahi',
+                'No notifications',
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w700,
@@ -40,7 +40,7 @@ class InboxScreen extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               const Text(
-                'Jab koi tumhari video like karega ya comment karega, yahan ayega.',
+                'When someone likes or comments on your video, it will show up here.',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: AppTheme.muted, fontSize: 14),
               ),

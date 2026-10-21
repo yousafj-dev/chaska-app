@@ -31,11 +31,11 @@ class _AuthScreenState extends State<AuthScreen> {
     final email = _email.text.trim();
     final pass = _pass.text;
     if (!email.contains('@')) {
-      setState(() => _error = 'Email theek likho.');
+      setState(() => _error = 'Please enter a valid email address.');
       return;
     }
     if (pass.length < 6) {
-      setState(() => _error = 'Password kam az kam 6 harf ka ho.');
+      setState(() => _error = 'Password must be at least 6 characters.');
       return;
     }
     setState(() {
@@ -86,7 +86,7 @@ class _AuthScreenState extends State<AuthScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const Text(
-                'Apni email likho — hum tumhe reset link bhej denge.',
+                'Enter your email — we will send you a reset link.',
                 style: TextStyle(color: AppTheme.muted, fontSize: 13),
               ),
               const SizedBox(height: 14),
@@ -130,7 +130,7 @@ class _AuthScreenState extends State<AuthScreen> {
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
                               content: Text(
-                                  'Reset link tumhari Gmail par bhej di hai — wahan se naya password banao.'),
+                                  'We have sent a reset link to your email — use it to set a new password.'),
                             ),
                           );
                         }
@@ -152,7 +152,7 @@ class _AuthScreenState extends State<AuthScreen> {
                         color: Colors.white,
                       ),
                     )
-                  : const Text('Reset link bhejo'),
+                  : const Text('Send reset link'),
             ),
           ],
         ),
@@ -182,7 +182,7 @@ class _AuthScreenState extends State<AuthScreen> {
               ),
               const SizedBox(height: 6),
               Text(
-                _isLogin ? 'Wapas khush aamdeed!' : 'Naya account banao',
+                _isLogin ? 'Welcome back!' : 'Create a new account',
                 textAlign: TextAlign.center,
                 style: const TextStyle(color: AppTheme.muted, fontSize: 15),
               ),
@@ -196,7 +196,7 @@ class _AuthScreenState extends State<AuthScreen> {
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: const Text(
-                    'Offline mode: Firebase abhi setup nahi hua, is liye login kaam nahi karega.',
+                    'Offline mode: Firebase is not set up yet, so login will not work.',
                     style: TextStyle(color: Colors.orange, fontSize: 13),
                     textAlign: TextAlign.center,
                   ),
@@ -218,7 +218,7 @@ class _AuthScreenState extends State<AuthScreen> {
                   child: TextButton(
                     onPressed: _busy ? null : _forgotPassword,
                     child: const Text(
-                      'Password bhool gaye?',
+                      'Forgot password?',
                       style: TextStyle(color: AppTheme.accent2),
                     ),
                   ),
@@ -243,7 +243,7 @@ class _AuthScreenState extends State<AuthScreen> {
                           color: Colors.white,
                         ),
                       )
-                    : Text(_isLogin ? 'Login karo' : 'Account banao'),
+                    : Text(_isLogin ? 'Log in' : 'Create account'),
               ),
               const SizedBox(height: 12),
               TextButton(
@@ -253,8 +253,8 @@ class _AuthScreenState extends State<AuthScreen> {
                 }),
                 child: Text(
                   _isLogin
-                      ? 'Naya ho? Account banao'
-                      : 'Pehle se account hai? Login karo',
+                      ? 'New here? Create an account'
+                      : 'Already have an account? Log in',
                   style: const TextStyle(color: AppTheme.accent2),
                 ),
               ),
