@@ -7,6 +7,7 @@ import 'package:chaska/models/chaska_video.dart';
 import 'package:chaska/services/auth_service.dart';
 import 'package:chaska/services/firestore_service.dart';
 import 'package:chaska/screens/profile/public_profile_screen.dart';
+import 'package:chaska/screens/sound/sound_page.dart';
 import 'package:chaska/widgets/comments_sheet.dart';
 
 /// One full-screen video page in the feed: autoplaying video,
@@ -155,6 +156,62 @@ class _VideoCardState extends State<VideoCard> {
     );
   }
 
+  bool _requireLogin() {
+    final auth = AuthService.instance;
+    if (AuthService.firebaseReady && auth.isSignedIn) return true;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Please log in first.')),
+    );
+    return false;
+  }
+
+  void _showMsg(String msg) {
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  void _showErr(Object e) {
+    _showMsg(e.toString().replaceFirst('Exception: ', ''));
+  }
+
+  Future<void> _onToggleFavorite() async {
+    if (!_requireLogin()) return;
+    try {
+      final nowFav =
+          await FirestoreService.instance.toggleFavorite(widget.video);
+      if (mounted) {
+        _showMsg(nowFav
+            ? 'Saved to favorites'
+            : 'Removed from favorites');
+      }
+    } catch (e) {
+      if (mounted) _showErr(e);
+    }
+  }
+
+  Future<void> _onToggleRepost() async {
+    if (!_requireLogin()) return;
+    try {
+      final nowReposted =
+          await FirestoreService.instance.toggleRepost(widget.video);
+      if (mounted) {
+        _showMsg(nowReposted
+            ? 'Reposted to your profile'
+            : 'Repost removed');
+      }
+    } catch (e) {
+      if (mounted) _showErr(e);
+    }
+  }
+
+  void _openSoundPage() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => SoundPage(soundName: widget.video.soundName),
+      ),
+    );
+  }
+
   void _share() {
     final caption = widget.video.caption.trim();
     final text = caption.isNotEmpty
@@ -211,12 +268,12 @@ class _VideoCardState extends State<VideoCard> {
           // Right-side action column: owner avatar + glass buttons
           Positioned(
             right: 10,
-            bottom: 90,
+            bottom: 80,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 _ownerAvatar(),
-                const SizedBox(height: 20),
+                const SizedBox(height: 16),
                 _GlassActionButton(
                   icon: liked ? Icons.favorite : Icons.favorite_border,
                   iconColor: liked ? AppTheme.accent2 : Colors.white,
@@ -224,14 +281,46 @@ class _VideoCardState extends State<VideoCard> {
                   popOnTap: true,
                   onTap: _onDoubleTap,
                 ),
-                const SizedBox(height: 18),
+                const SizedBox(height: 14),
                 _GlassActionButton(
                   icon: Icons.comment_outlined,
                   iconColor: Colors.white,
                   label: _shortNum(widget.video.commentCount),
                   onTap: _openComments,
                 ),
-                const SizedBox(height: 18),
+                const SizedBox(height: 14),
+                StreamBuilder<bool>(
+                  stream: FirestoreService.instance
+                      .isReposted(widget.video.id),
+                  builder: (context, snap) {
+                    final reposted = snap.data ?? false;
+                    return _GlassActionButton(
+                      icon: Icons.repeat,
+                      iconColor:
+                          reposted ? AppTheme.accent2 : Colors.white,
+                      label: _shortNum(
+                          widget.video.repostCount < 0
+                              ? 0
+                              : widget.video.repostCount),
+                      onTap: _onToggleRepost,
+                    );
+                  },
+                ),
+                const SizedBox(height: 14),
+                StreamBuilder<bool>(
+                  stream: FirestoreService.instance
+                      .isFavorite(widget.video.id),
+                  builder: (context, snap) {
+                    final fav = snap.data ?? false;
+                    return _GlassActionButton(
+                      icon: fav ? Icons.bookmark : Icons.bookmark_border,
+                      iconColor: fav ? AppTheme.accent2 : Colors.white,
+                      label: 'Save',
+                      onTap: _onToggleFavorite,
+                    );
+                  },
+                ),
+                const SizedBox(height: 14),
                 _GlassActionButton(
                   icon: Icons.share_outlined,
                   iconColor: Colors.white,
@@ -271,6 +360,29 @@ class _VideoCardState extends State<VideoCard> {
                         color: Colors.white, fontSize: 14),
                   ),
                 ],
+                const SizedBox(height: 8),
+                // Sound row: tap → sound page with all videos
+                // using this sound + "Use this sound".
+                GestureDetector(
+                  onTap: _openSoundPage,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.music_note,
+                          color: Colors.white, size: 15),
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          widget.video.soundName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              color: Colors.white, fontSize: 13),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),
