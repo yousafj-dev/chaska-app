@@ -93,6 +93,93 @@ class VideoFilters {
     0, 0, 0, 1, 0,
   ];
 
+  static const List<double> _sunsetPreview = [
+    1.2, 0.05, 0, 0, 10,
+    0, 1.02, 0, 0, 2,
+    0, 0, 0.78, 0, -8,
+    0, 0, 0, 1, 0,
+  ];
+
+  static const List<double> _goldenPreview = [
+    1.12, 0.04, 0, 0, 6,
+    0.02, 1.06, 0, 0, 4,
+    0, 0, 0.82, 0, -6,
+    0, 0, 0, 1, 0,
+  ];
+
+  static const List<double> _candyPreview = [
+    1.18, 0, 0.04, 0, 12,
+    0, 0.98, 0.02, 0, 2,
+    0.04, 0, 1.1, 0, 8,
+    0, 0, 0, 1, 0,
+  ];
+
+  static const List<double> _tealPreview = [
+    1.04, 0, 0.02, 0, 0,
+    0, 1.05, 0.02, 0, 2,
+    0, 0.04, 1.12, 0, 4,
+    0, 0, 0, 1, 0,
+  ];
+
+  static const List<double> _dramaPreview = [
+    1.12, 0.04, 0.01, 0, -22,
+    0.03, 1.11, 0.03, 0, -22,
+    0.03, 0.04, 1.12, 0, -22,
+    0, 0, 0, 1, 0,
+  ];
+
+  // Blur-based filters (Beauty, Dreamy) approximate with brightness /
+  // contrast / saturation only — the baked FFmpeg result is the real one.
+  static const List<double> _beautyPreview = [
+    0.97, 0, 0, 0, 20,
+    0, 0.96, 0, 0, 18,
+    0, 0, 0.97, 0, 16,
+    0, 0, 0, 1, 0,
+  ];
+
+  static const List<double> _retroPreview = [
+    0.78, 0.2, 0.04, 0, 22,
+    0.12, 0.82, 0.08, 0, 24,
+    0.14, 0.24, 0.62, 0, 14,
+    0, 0, 0, 1, 0,
+  ];
+
+  static const List<double> _cyberPreview = [
+    1.1, 0, 0.12, 0, 4,
+    0, 0.92, 0.06, 0, 0,
+    0.08, 0, 1.24, 0, 10,
+    0, 0, 0, 1, 0,
+  ];
+
+  static const List<double> _midnightPreview = [
+    0.82, 0, 0.04, 0, -16,
+    0, 0.9, 0.04, 0, -10,
+    0.02, 0.05, 1.18, 0, 2,
+    0, 0, 0, 1, 0,
+  ];
+
+  static const List<double> _sepiaPreview = [
+    0.393, 0.769, 0.189, 0, 0,
+    0.349, 0.686, 0.168, 0, 0,
+    0.272, 0.534, 0.131, 0, 0,
+    0, 0, 0, 1, 0,
+  ];
+
+  static const List<double> _dreamyPreview = [
+    0.96, 0, 0, 0, 30,
+    0, 0.95, 0, 0, 27,
+    0, 0, 0.97, 0, 24,
+    0, 0, 0, 1, 0,
+  ];
+
+  // Sharpen can't be expressed as a colour matrix; contrast stands in.
+  static const List<double> _crispPreview = [
+    1.1, 0, 0, 0, -12,
+    0, 1.1, 0, 0, -12,
+    0, 0, 1.1, 0, -12,
+    0, 0, 0, 1, 0,
+  ];
+
   static List<VideoFilter> get all => [
         const VideoFilter('Normal', null, null),
         VideoFilter('Warm',
@@ -116,6 +203,54 @@ class VideoFilters {
             'eq=saturation=0.04:contrast=1.32:brightness=-0.02,'
             'vignette=PI/3.2',
             _noirPreview),
+        VideoFilter('Sunset',
+            'eq=saturation=1.3:brightness=0.03,'
+            'colorbalance=rs=0.22:gs=0.05:bs=-0.22:rm=0.12:gm=0.02:bm=-0.12',
+            _sunsetPreview),
+        VideoFilter('Golden',
+            'eq=saturation=1.15:contrast=0.96:brightness=0.03,'
+            'colorbalance=rs=0.15:gs=0.08:bs=-0.18:rm=0.1:gm=0.04:bm=-0.1',
+            _goldenPreview),
+        VideoFilter('Candy',
+            'eq=saturation=1.35:brightness=0.06,'
+            'colorbalance=rs=0.12:bs=0.1:rm=0.08:bm=0.06',
+            _candyPreview),
+        VideoFilter('Teal',
+            'colorbalance=rs=-0.12:gs=0.1:bs=0.18:rh=0.12:gh=0.02:bh=-0.12,'
+            'eq=saturation=1.12:contrast=1.06',
+            _tealPreview),
+        VideoFilter('Drama',
+            'eq=contrast=1.28:brightness=-0.04:saturation=0.85',
+            _dramaPreview),
+        VideoFilter('Beauty',
+            'split[a][b];[b]gblur=sigma=2[bb];'
+            '[a][bb]blend=all_mode=overlay:all_opacity=0.35,'
+            'eq=brightness=0.05:contrast=0.94:saturation=1.08',
+            _beautyPreview),
+        VideoFilter('Retro',
+            'eq=saturation=0.75:contrast=0.9:brightness=0.06,'
+            'colorbalance=gs=0.08:gm=0.05:bs=-0.05,vignette=PI/4.5',
+            _retroPreview),
+        VideoFilter('Cyber',
+            'eq=saturation=1.35:contrast=1.1,'
+            'colorbalance=rs=0.12:gs=-0.05:bs=0.22:bm=0.12',
+            _cyberPreview),
+        VideoFilter('Midnight',
+            'eq=brightness=-0.09:contrast=1.12:saturation=0.8,'
+            'colorbalance=rs=-0.15:gs=-0.05:bs=0.25:bm=0.15',
+            _midnightPreview),
+        VideoFilter('Sepia',
+            'colorchannelmixer=.393:.769:.189:0:.349:.686:.168:0:'
+            '.272:.534:.131:0',
+            _sepiaPreview),
+        VideoFilter('Dreamy',
+            'split[a][b];[b]gblur=sigma=6[bb];'
+            '[a][bb]blend=all_mode=screen:all_opacity=0.4,'
+            'eq=brightness=0.06:saturation=1.1',
+            _dreamyPreview),
+        VideoFilter('Crisp',
+            'unsharp=5:5:1.2:5:5:0.0,eq=contrast=1.08:saturation=1.05',
+            _crispPreview),
       ];
 }
 
