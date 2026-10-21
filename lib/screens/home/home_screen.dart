@@ -3,7 +3,7 @@ import 'package:chaska/core/theme/app_theme.dart';
 import 'package:chaska/models/chaska_video.dart';
 import 'package:chaska/services/auth_service.dart';
 import 'package:chaska/services/firestore_service.dart';
-import 'package:chaska/screens/upload/upload_screen.dart';
+import 'package:chaska/screens/create/create_screen.dart';
 import 'package:chaska/widgets/stories_row.dart';
 import 'package:chaska/widgets/video_feed.dart';
 
@@ -216,7 +216,7 @@ class _HomeScreenState extends State<HomeScreen> {
               onPressed: () {
                 Navigator.of(context).push(
                   MaterialPageRoute(
-                      builder: (_) => const UploadScreen()),
+                      builder: (_) => const CreateScreen()),
                 );
               },
               icon: const Icon(Icons.add),
