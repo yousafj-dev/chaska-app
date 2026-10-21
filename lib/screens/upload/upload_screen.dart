@@ -10,8 +10,13 @@ import 'package:chaska/services/storage_service.dart';
 
 /// Upload: pick a video, preview it, add a caption, upload to
 /// Cloudinary + save the Firestore doc. Requires login.
+///
+/// [initialSoundName] pre-attaches a sound (from a sound page's
+/// "Use this sound"), so the new video is grouped under that sound.
 class UploadScreen extends StatefulWidget {
-  const UploadScreen({super.key});
+  final String? initialSoundName;
+
+  const UploadScreen({super.key, this.initialSoundName});
 
   @override
   State<UploadScreen> createState() => _UploadScreenState();
@@ -19,6 +24,7 @@ class UploadScreen extends StatefulWidget {
 
 class _UploadScreenState extends State<UploadScreen> {
   final _caption = TextEditingController();
+  late final TextEditingController _sound;
   final _picker = ImagePicker();
   XFile? _picked;
   VideoPlayerController? _preview;
@@ -28,8 +34,15 @@ class _UploadScreenState extends State<UploadScreen> {
   String? _error;
 
   @override
+  void initState() {
+    super.initState();
+    _sound = TextEditingController(text: widget.initialSoundName ?? '');
+  }
+
+  @override
   void dispose() {
     _caption.dispose();
+    _sound.dispose();
     _preview?.dispose();
     super.dispose();
   }
@@ -102,6 +115,7 @@ class _UploadScreenState extends State<UploadScreen> {
         caption: _caption.text.trim(),
         uid: auth.uid!,
         username: auth.displayName,
+        soundName: _sound.text.trim(),
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -180,6 +194,16 @@ class _UploadScreenState extends State<UploadScreen> {
               maxLength: 150,
               decoration: const InputDecoration(
                 hintText: 'Write a caption... #chaska',
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _sound,
+              maxLength: 60,
+              decoration: const InputDecoration(
+                hintText: 'Sound name (optional)',
+                prefixIcon: Icon(Icons.music_note,
+                    color: AppTheme.muted, size: 20),
               ),
             ),
             if (_error != null) ...[
