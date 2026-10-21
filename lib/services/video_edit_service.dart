@@ -16,6 +16,145 @@ class VideoFilter {
   const VideoFilter(this.name, this.ffmpegFilter, this.previewMatrix);
 }
 
+/// A named whole-frame effect (TikTok-panel style). [ffmpegGraph] is
+/// the full `-vf` filtergraph baked into the posted video — effects
+/// include their own colour grade, so a selected effect is used
+/// INSTEAD of the colour filter chain. These are frame-level effects
+/// only: there is no face tracking / AR, and the preview can only
+/// approximate the grade effects ([previewMatrix]); structural
+/// effects (mirror, glitch…) honestly show no preview change.
+class VideoEffect {
+  final String name;
+  final String emoji;
+  final String? ffmpegGraph;
+  final List<double>? previewMatrix;
+
+  const VideoEffect(this.name, this.emoji, this.ffmpegGraph,
+      this.previewMatrix);
+}
+
+class VideoEffects {
+  VideoEffects._();
+
+  static const VideoEffect none = VideoEffect('None', '🚫', null, null);
+
+  // Preview approximations exist ONLY for grade-style effects.
+  static const List<double> _softGlowPreview = [
+    1.10, 0, 0, 0, 14,
+    0, 1.02, 0, 0, 8,
+    0, 0, 0.92, 0, 2,
+    0, 0, 0, 1, 0,
+  ];
+
+  static const List<double> _posterPopPreview = [
+    1.72, -0.47, -0.05, 0, -25,
+    -0.14, 1.39, -0.05, 0, -25,
+    -0.14, -0.47, 1.81, 0, -25,
+    0, 0, 0, 1, 0,
+  ];
+
+  static const List<double> _oldFilmPreview = [
+    0.72, 0.25, 0.05, 0, 14,
+    0.16, 0.66, 0.08, 0, 10,
+    0.14, 0.22, 0.52, 0, 2,
+    0, 0, 0, 1, 0,
+  ];
+
+  static const List<double> _cinematicPreview = [
+    1.06, 0, 0.02, 0, -2,
+    0, 1.04, 0, 0, 0,
+    0.02, 0, 1.10, 0, 4,
+    0, 0, 0, 1, 0,
+  ];
+
+  // Every ffmpegGraph below was syntax-tested locally against the
+  // system ffmpeg on even (540x960) and odd (541x961) clips, alone,
+  // with drawtext appended, and in the music-replace command shape.
+  static List<VideoEffect> get all => [
+        none,
+        const VideoEffect(
+            'Soft Glow',
+            '🌸',
+            'split[a][b];[b]gblur=sigma=8[bb];'
+                '[a][bb]blend=all_mode=softlight:all_opacity=0.45,'
+                'eq=brightness=0.05:saturation=1.15,'
+                'colorbalance=rs=0.1:gs=-0.02:bs=-0.06:rm=0.06:bm=-0.04',
+            _softGlowPreview),
+        const VideoEffect(
+            'Glitch',
+            '👾',
+            'rgbashift=rh=-10:bh=10:gh=5,noise=alls=28:allf=t,'
+                'eq=saturation=1.55:contrast=1.1',
+            null),
+        const VideoEffect(
+            'Cartoon',
+            '🎨',
+            'split[a][b];'
+                '[a]bilateral=sigmaS=4:sigmaR=0.12,'
+                'eq=saturation=1.35:contrast=1.05[base];'
+                '[b]format=gray,edgedetect=low=0.08:high=0.25,negate,'
+                'format=yuv420p[edges];'
+                '[base][edges]blend=all_mode=multiply',
+            null),
+        const VideoEffect(
+            'VHS',
+            '📼',
+            'noise=alls=18:allf=t,rgbashift=rh=-3:bh=3,'
+                'eq=saturation=0.72:contrast=0.96:brightness=0.02,'
+                'vignette=PI/5',
+            null),
+        const VideoEffect(
+            'Mirror',
+            '🪞',
+            'scale=trunc(iw/2)*2:trunc(ih/2)*2,crop=iw/2:ih,'
+                'split[l][r];[r]hflip[rf];[l][rf]hstack,setsar=1',
+            null),
+        const VideoEffect(
+            'Quad',
+            '🪟',
+            'scale=trunc(iw/2)*2:trunc(ih/2)*2,crop=iw/2:ih/2,'
+                'split=4[a][b][c][d];[b]hflip[bf];[c]vflip[cf];'
+                '[d]hflip,vflip[df];[a][bf]hstack[top];'
+                '[cf][df]hstack[bot];[top][bot]vstack,setsar=1',
+            null),
+        const VideoEffect(
+            'Dream Blur',
+            '☁️',
+            'split[a][b];[b]gblur=sigma=16[bb];'
+                '[a][bb]blend=all_mode=screen:all_opacity=0.5,'
+                'eq=brightness=0.05:saturation=1.1',
+            null),
+        const VideoEffect(
+            'Poster Pop',
+            '💥',
+            'eq=saturation=1.65:contrast=1.25:brightness=0.01,'
+                'vibrance=intensity=0.55',
+            _posterPopPreview),
+        const VideoEffect(
+            'Old Film',
+            '🎞️',
+            'eq=saturation=0.42:contrast=0.95:brightness=0.03,'
+                'colorbalance=rs=0.09:gs=0.03:bs=-0.11,'
+                'noise=alls=14:allf=t,vignette=PI/4.5',
+            _oldFilmPreview),
+        const VideoEffect(
+            'Cinematic',
+            '🎬',
+            'colorbalance=rs=-0.1:gs=0.05:bs=0.13:rh=0.13:gh=0.04:'
+                'bh=-0.1,eq=saturation=1.12:contrast=1.08,'
+                'drawbox=x=0:y=0:w=iw:h=ih/13:color=black:t=fill,'
+                'drawbox=x=0:y=ih-ih/13:w=iw:h=ih/13:color=black:t=fill',
+            _cinematicPreview),
+        const VideoEffect(
+            'Neon Edges',
+            '⚡',
+            'format=gray,edgedetect=low=0.08:high=0.3,format=rgb24,'
+                'lutrgb=r=val*0.3:g=val:b=val,'
+                'eq=contrast=1.25:brightness=0.06',
+            null),
+      ];
+}
+
 /// Where the overlay text sits on the frame.
 enum OverlayPosition { top, center, bottom }
 
@@ -25,6 +164,10 @@ enum MusicMode { original, mute, replace }
 /// The edits chosen on the edit screen.
 class VideoEditOptions {
   final VideoFilter filter;
+
+  /// Whole-frame effect. When one is selected its graph replaces the
+  /// colour [filter] chain (effects carry their own grade).
+  final VideoEffect effect;
   final MusicMode musicMode;
 
   /// Audio file path when [musicMode] is [MusicMode.replace].
@@ -34,6 +177,7 @@ class VideoEditOptions {
 
   const VideoEditOptions({
     required this.filter,
+    this.effect = VideoEffects.none,
     this.musicMode = MusicMode.original,
     this.musicPath,
     this.overlayText = '',
@@ -41,6 +185,7 @@ class VideoEditOptions {
   });
 
   bool get hasEdits =>
+      effect.ffmpegGraph != null ||
       filter.ffmpegFilter != null ||
       musicMode != MusicMode.original ||
       overlayText.trim().isNotEmpty;
@@ -276,10 +421,13 @@ class VideoEditService {
     final out = File(
         '${tmp.path}/chaska_edit_${DateTime.now().millisecondsSinceEpoch}.mp4');
 
-    // Build the video filter chain: colour filter first, then text.
+    // Build the video filter chain: a selected effect replaces the
+    // colour filter (its graph includes its own grade); text is last.
     final vfParts = <String>[];
-    if (options.filter.ffmpegFilter != null) {
-      vfParts.add(options.filter.ffmpegFilter!);
+    final baseChain =
+        options.effect.ffmpegGraph ?? options.filter.ffmpegFilter;
+    if (baseChain != null) {
+      vfParts.add(baseChain);
     }
     final text = options.overlayText.trim();
     if (text.isNotEmpty) {
