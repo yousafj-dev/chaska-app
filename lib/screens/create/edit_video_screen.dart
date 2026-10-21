@@ -38,6 +38,7 @@ class _EditVideoScreenState extends State<EditVideoScreen> {
 
   VideoPlayerController? _player;
   VideoFilter _filter = VideoFilters.all.first;
+  VideoEffect _effect = VideoEffects.all.first;
   MusicMode _musicMode = MusicMode.original;
   String? _musicPath;
   String? _musicName;
@@ -78,10 +79,28 @@ class _EditVideoScreenState extends State<EditVideoScreen> {
 
   bool get _hasEdits => VideoEditOptions(
         filter: _filter,
+        effect: _effect,
         musicMode: _musicMode,
         musicPath: _musicPath,
         overlayText: _overlay.text,
       ).hasEdits;
+
+  /// Picking a real colour filter clears the effect (an effect's
+  /// baked graph replaces the filter chain, never combines with it).
+  void _selectFilter(VideoFilter f) {
+    setState(() {
+      _filter = f;
+      if (f.ffmpegFilter != null) _effect = VideoEffects.all.first;
+    });
+  }
+
+  /// Picking an effect resets the colour filter for the same reason.
+  void _selectEffect(VideoEffect fx) {
+    setState(() {
+      _effect = fx;
+      if (fx.ffmpegGraph != null) _filter = VideoFilters.all.first;
+    });
+  }
 
   Future<void> _pickMusic() async {
     try {
@@ -136,6 +155,7 @@ class _EditVideoScreenState extends State<EditVideoScreen> {
           input: toUpload,
           options: VideoEditOptions(
             filter: _filter,
+            effect: _effect,
             musicMode: _musicMode,
             musicPath: _musicPath,
             overlayText: _overlay.text,
@@ -221,6 +241,13 @@ class _EditVideoScreenState extends State<EditVideoScreen> {
                 _sectionLabel('Filters'),
                 const SizedBox(height: 8),
                 _filtersRow(),
+                const SizedBox(height: 16),
+                _sectionLabel('Effects'),
+                const SizedBox(height: 2),
+                const Text('Effects apply when you post.',
+                    style: TextStyle(color: AppTheme.muted, fontSize: 12)),
+                const SizedBox(height: 8),
+                _effectsRow(),
                 const SizedBox(height: 16),
                 _sectionLabel('Music'),
                 const SizedBox(height: 8),
@@ -339,9 +366,15 @@ class _EditVideoScreenState extends State<EditVideoScreen> {
       video = const Center(child: CircularProgressIndicator());
     } else {
       Widget inner = VideoPlayer(player);
-      if (_filter.previewMatrix != null) {
+      // A selected effect's grade replaces the filter preview;
+      // structural effects have no honest matrix and show the
+      // video unchanged — the baked result appears on post.
+      final matrix = _effect.ffmpegGraph != null
+          ? _effect.previewMatrix
+          : _filter.previewMatrix;
+      if (matrix != null) {
         inner = ColorFiltered(
-          colorFilter: ColorFilter.matrix(_filter.previewMatrix!),
+          colorFilter: ColorFilter.matrix(matrix),
           child: inner,
         );
       }
@@ -412,13 +445,69 @@ class _EditVideoScreenState extends State<EditVideoScreen> {
           return ChoiceChip(
             label: Text(f.name),
             selected: selected,
-            onSelected: _posting ? null : (_) => setState(() => _filter = f),
+            onSelected: _posting ? null : (_) => _selectFilter(f),
             selectedColor: AppTheme.accent,
             backgroundColor: AppTheme.card,
             labelStyle: TextStyle(
                 color: selected ? Colors.white : AppTheme.muted,
                 fontWeight: FontWeight.w600),
             side: BorderSide.none,
+          );
+        },
+      ),
+    );
+  }
+
+  /// TikTok-panel style tiles: rounded square, emoji glyph, name
+  /// underneath, violet highlight when selected. Single-select.
+  Widget _effectsRow() {
+    return SizedBox(
+      height: 88,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: VideoEffects.all.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 10),
+        itemBuilder: (_, i) {
+          final fx = VideoEffects.all[i];
+          final selected = fx.name == _effect.name;
+          return GestureDetector(
+            onTap: _posting ? null : () => _selectEffect(fx),
+            child: SizedBox(
+              width: 62,
+              child: Column(
+                children: [
+                  Container(
+                    width: 56,
+                    height: 56,
+                    decoration: BoxDecoration(
+                      color: AppTheme.card,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: selected
+                            ? AppTheme.accent
+                            : Colors.transparent,
+                        width: 2,
+                      ),
+                    ),
+                    child: Center(
+                      child: Text(fx.emoji,
+                          style: const TextStyle(fontSize: 26)),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    fx.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      color: selected ? Colors.white : AppTheme.muted,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           );
         },
       ),
