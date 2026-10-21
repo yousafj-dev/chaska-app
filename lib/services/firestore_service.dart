@@ -31,6 +31,12 @@ class FirestoreService {
   CollectionReference _followingCol(String uid) =>
       _users.doc(uid).collection('following');
 
+  CollectionReference _favoritesCol(String uid) =>
+      _users.doc(uid).collection('favorites');
+
+  CollectionReference _repostsCol(String uid) =>
+      _users.doc(uid).collection('reposts');
+
   /// Live profile of one user (`users/{uid}`). Emits null when the
   /// doc does not exist yet or Firebase is not ready.
   Stream<ChaskaUser?> userProfile(String uid) {
@@ -112,13 +118,17 @@ class FirestoreService {
     required String caption,
     required String uid,
     required String username,
+    String? soundName,
   }) async {
+    final trimmedSound = soundName?.trim() ?? '';
     final doc = await _videos.add(ChaskaVideo(
       id: '',
       videoUrl: videoUrl,
       caption: caption,
       uid: uid,
       username: username,
+      soundName:
+          trimmedSound.isEmpty ? 'Original sound' : trimmedSound,
       createdAt: DateTime.now(),
     ).toMap());
     return doc.id;
@@ -300,6 +310,202 @@ class FirestoreService {
       });
     } catch (e) {
       debugPrint('followingVideos failed: $e');
+      return Stream.value(const []);
+    }
+  }
+
+  // ---------------------------------------------------------------
+  // Favorites
+  // Data: users/{myUid}/favorites/{videoId} = {videoId, createdAt}
+  // ---------------------------------------------------------------
+
+  /// Whether the signed-in user has favorited [videoId].
+  Stream<bool> isFavorite(String videoId) {
+    final myUid = AuthService.instance.uid;
+    if (myUid == null) return Stream.value(false);
+    try {
+      return _favoritesCol(myUid)
+          .doc(videoId)
+          .snapshots()
+          .map((d) => d.exists);
+    } catch (e) {
+      debugPrint('isFavorite failed: $e');
+      return Stream.value(false);
+    }
+  }
+
+  /// Toggle favorite for the signed-in user. Returns the new state.
+  Future<bool> toggleFavorite(ChaskaVideo video) async {
+    final myUid = AuthService.instance.uid;
+    if (myUid == null) throw Exception('Please log in first.');
+    final ref = _favoritesCol(myUid).doc(video.id);
+    final snap = await ref.get();
+    if (snap.exists) {
+      await ref.delete();
+      return false;
+    }
+    await ref.set({
+      'videoId': video.id,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+    return true;
+  }
+
+  /// Videos the user favorited, newest favorite first. Ids come from
+  /// the favorites subcollection and are resolved to video docs;
+  /// favorites whose video was deleted are skipped. Sorted
+  /// client-side to avoid needing a composite index.
+  Stream<List<ChaskaVideo>> favoriteVideos(String uid) {
+    try {
+      return _favoritesCol(uid).snapshots().asyncMap((s) async {
+        final docs = s.docs.toList()
+          ..sort((a, b) {
+            final ta = (a.data() as Map<String, dynamic>?)?['createdAt'];
+            final tb = (b.data() as Map<String, dynamic>?)?['createdAt'];
+            final da = ta is Timestamp ? ta.toDate() : DateTime(0);
+            final db = tb is Timestamp ? tb.toDate() : DateTime(0);
+            return db.compareTo(da);
+          });
+        final out = <ChaskaVideo>[];
+        for (final d in docs) {
+          final vdoc = await _videos.doc(d.id).get();
+          if (vdoc.exists) out.add(ChaskaVideo.fromDoc(vdoc));
+        }
+        return out;
+      });
+    } catch (e) {
+      debugPrint('favoriteVideos failed: $e');
+      return Stream.value(const []);
+    }
+  }
+
+  // ---------------------------------------------------------------
+  // Reposts
+  // Data: users/{myUid}/reposts/{videoId} = {videoId, createdAt}
+  // plus a repostCount counter on the video doc itself.
+  // ---------------------------------------------------------------
+
+  /// Whether the signed-in user has reposted [videoId].
+  Stream<bool> isReposted(String videoId) {
+    final myUid = AuthService.instance.uid;
+    if (myUid == null) return Stream.value(false);
+    try {
+      return _repostsCol(myUid)
+          .doc(videoId)
+          .snapshots()
+          .map((d) => d.exists);
+    } catch (e) {
+      debugPrint('isReposted failed: $e');
+      return Stream.value(false);
+    }
+  }
+
+  /// Toggle repost for the signed-in user: writes/removes the
+  /// repost doc and adjusts the video's repostCount.
+  /// Returns the new reposted state.
+  Future<bool> toggleRepost(ChaskaVideo video) async {
+    final myUid = AuthService.instance.uid;
+    if (myUid == null) throw Exception('Please log in first.');
+    final ref = _repostsCol(myUid).doc(video.id);
+    final snap = await ref.get();
+    if (snap.exists) {
+      await ref.delete();
+      await _videos.doc(video.id).update({
+        'repostCount': FieldValue.increment(-1),
+      });
+      return false;
+    }
+    await ref.set({
+      'videoId': video.id,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+    await _videos.doc(video.id).update({
+      'repostCount': FieldValue.increment(1),
+    });
+    return true;
+  }
+
+  /// Videos the user reposted, newest repost first. Same
+  /// resolve-by-id pattern as [favoriteVideos].
+  Stream<List<ChaskaVideo>> repostedVideos(String uid) {
+    try {
+      return _repostsCol(uid).snapshots().asyncMap((s) async {
+        final docs = s.docs.toList()
+          ..sort((a, b) {
+            final ta = (a.data() as Map<String, dynamic>?)?['createdAt'];
+            final tb = (b.data() as Map<String, dynamic>?)?['createdAt'];
+            final da = ta is Timestamp ? ta.toDate() : DateTime(0);
+            final db = tb is Timestamp ? tb.toDate() : DateTime(0);
+            return db.compareTo(da);
+          });
+        final out = <ChaskaVideo>[];
+        for (final d in docs) {
+          final vdoc = await _videos.doc(d.id).get();
+          if (vdoc.exists) out.add(ChaskaVideo.fromDoc(vdoc));
+        }
+        return out;
+      });
+    } catch (e) {
+      debugPrint('repostedVideos failed: $e');
+      return Stream.value(const []);
+    }
+  }
+
+  // ---------------------------------------------------------------
+  // Delete own video
+  // ---------------------------------------------------------------
+
+  /// Permanently deletes one of the signed-in user's own videos:
+  /// the video doc, its comments subcollection, and the user's own
+  /// favorites/reposts entries for it. Likes live on the video doc
+  /// itself (likedBy array), so they go away with the doc.
+  ///
+  /// NOTE: the Cloudinary media file is NOT deleted — uploads use an
+  /// unsigned preset, which cannot delete media. Only the app record
+  /// is removed, so the video disappears from the app everywhere.
+  Future<void> deleteVideo(ChaskaVideo video) async {
+    final myUid = AuthService.instance.uid;
+    if (myUid == null) throw Exception('Please log in first.');
+    if (video.uid != myUid) {
+      throw Exception('You can only delete your own videos.');
+    }
+    final ref = _videos.doc(video.id);
+    // Comments subcollection, best-effort, in pages of 200.
+    while (true) {
+      final qs = await ref.collection('comments').limit(200).get();
+      if (qs.docs.isEmpty) break;
+      final batch = _dbSafe.batch();
+      for (final d in qs.docs) {
+        batch.delete(d.reference);
+      }
+      await batch.commit();
+      if (qs.docs.length < 200) break;
+    }
+    final batch = _dbSafe.batch();
+    batch.delete(ref);
+    batch.delete(_favoritesCol(myUid).doc(video.id));
+    batch.delete(_repostsCol(myUid).doc(video.id));
+    await batch.commit();
+  }
+
+  // ---------------------------------------------------------------
+  // Sounds
+  // ---------------------------------------------------------------
+
+  /// All videos using [soundName], newest first. Equality filter +
+  /// client-side sort to avoid needing a composite index.
+  Stream<List<ChaskaVideo>> videosBySound(String soundName) {
+    try {
+      return _videos
+          .where('soundName', isEqualTo: soundName)
+          .snapshots()
+          .map((s) {
+        final list = s.docs.map(ChaskaVideo.fromDoc).toList()
+          ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        return list;
+      });
+    } catch (e) {
+      debugPrint('videosBySound failed: $e');
       return Stream.value(const []);
     }
   }
