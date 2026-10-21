@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:chaska/core/theme/app_theme.dart';
 import 'package:chaska/screens/home/home_screen.dart';
 import 'package:chaska/screens/discover/discover_screen.dart';
-import 'package:chaska/screens/upload/upload_screen.dart';
+import 'package:chaska/screens/create/create_screen.dart';
 import 'package:chaska/screens/inbox/inbox_screen.dart';
 import 'package:chaska/screens/profile/profile_screen.dart';
 
@@ -29,7 +29,7 @@ class _MainShellState extends State<MainShell> {
   void _onTap(int i) {
     if (i == 2) {
       Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => const UploadScreen()),
+        MaterialPageRoute(builder: (_) => const CreateScreen()),
       );
       return;
     }
