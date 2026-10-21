@@ -10,6 +10,13 @@ class ChaskaVideo {
   final int likes;
   final List<String> likedBy;
   final int commentCount;
+
+  /// Name of the sound attached to this video. Sounds group videos:
+  /// every video uploaded via "Use this sound" carries the same name.
+  final String soundName;
+
+  /// How many times this video has been reposted.
+  final int repostCount;
   final DateTime createdAt;
 
   const ChaskaVideo({
@@ -21,6 +28,8 @@ class ChaskaVideo {
     this.likes = 0,
     this.likedBy = const [],
     this.commentCount = 0,
+    this.soundName = 'Original sound',
+    this.repostCount = 0,
     required this.createdAt,
   });
 
@@ -58,6 +67,8 @@ class ChaskaVideo {
           .map((e) => e.toString())
           .toList(),
       commentCount: (d['commentCount'] ?? 0) as int,
+      soundName: (d['soundName'] ?? 'Original sound') as String,
+      repostCount: (d['repostCount'] ?? 0) as int,
       createdAt: ts,
     );
   }
@@ -70,6 +81,8 @@ class ChaskaVideo {
         'likes': likes,
         'likedBy': likedBy,
         'commentCount': commentCount,
+        'soundName': soundName,
+        'repostCount': repostCount,
         'createdAt': FieldValue.serverTimestamp(),
       };
 }
