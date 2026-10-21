@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:chaska/core/theme/app_theme.dart';
 import 'package:chaska/models/chaska_video.dart';
 import 'package:chaska/services/firestore_service.dart';
-import 'package:chaska/screens/upload/upload_screen.dart';
+import 'package:chaska/screens/create/create_screen.dart';
 import 'package:chaska/widgets/video_feed.dart';
 
 /// Sound page: every video that uses one sound name, TikTok-style.
@@ -105,7 +105,7 @@ class SoundPage extends StatelessWidget {
               Navigator.of(context).push(
                 MaterialPageRoute(
                   builder: (_) =>
-                      UploadScreen(initialSoundName: soundName),
+                      CreateScreen(initialSoundName: soundName),
                 ),
               );
             },
