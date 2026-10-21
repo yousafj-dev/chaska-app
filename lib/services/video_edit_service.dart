@@ -67,6 +67,30 @@ class VideoEffects {
     0, 0, 0, 1, 0,
   ];
 
+  // Pack 2 preview approximations (grade-style effects only; the blur
+  // in Fog / Underwater cannot be expressed as a matrix and is baked
+  // for real by FFmpeg — the matrix only matches the grade).
+  static const List<double> _fogPreview = [
+    0.74, 0.08, 0.02, 0, 40,
+    0.06, 0.76, 0.03, 0, 38,
+    0.05, 0.09, 0.80, 0, 36,
+    0, 0, 0, 1, 0,
+  ];
+
+  static const List<double> _xrayPreview = [
+    -0.55, 0, 0, 0, 200,
+    0, -0.95, 0, 0, 245,
+    0, 0, -0.55, 0, 195,
+    0, 0, 0, 1, 0,
+  ];
+
+  static const List<double> _underwaterPreview = [
+    0.80, 0.03, 0.02, 0, -8,
+    0.02, 0.98, 0.05, 0, 2,
+    0.03, 0.07, 1.13, 0, 10,
+    0, 0, 0, 1, 0,
+  ];
+
   // Every ffmpegGraph below was syntax-tested locally against the
   // system ffmpeg on even (540x960) and odd (541x961) clips, alone,
   // with drawtext appended, and in the music-replace command shape.
@@ -152,6 +176,108 @@ class VideoEffects {
                 'lutrgb=r=val*0.3:g=val:b=val,'
                 'eq=contrast=1.25:brightness=0.06',
             null),
+        // ---- Effects Pack 2 -------------------------------------------
+        // Tested the same way on 540x960 and 538x958 clips, alone, with
+        // drawtext appended, and in the music-replace command shape.
+        // Camcorder carries two placeholders in its graph —
+        // __CHASKA_FONT__ and __CHASKA_DATE__ — which VideoEditService
+        // resolves at processing time (bundled font path + today's
+        // date), so its text is real drawtext baked into the video.
+        const VideoEffect(
+            'Fisheye',
+            '🐟',
+            'lenscorrection=cx=0.5:cy=0.5:k1=0.35:k2=0.08:i=bilinear',
+            null),
+        const VideoEffect(
+            'Spin',
+            '🔄',
+            'scale=iw*1.8:ih*1.8,'
+                "rotate=a='t*1.2':ow=iw:oh=ih:c=black,"
+                'crop=iw/1.8:ih/1.8,'
+                'scale=trunc(iw/2)*2:trunc(ih/2)*2',
+            null),
+        const VideoEffect(
+            'Shake',
+            '📳',
+            'scale=iw*1.12:ih*1.12,'
+                "rotate=a='0.03*sin(t*28)':ow=iw:oh=ih:c=black,"
+                'crop=iw/1.12:ih/1.12,'
+                'scale=trunc(iw/2)*2:trunc(ih/2)*2',
+            null),
+        const VideoEffect(
+            'Psychedelic',
+            '🌀',
+            "negate,hue=h='t*40':s=1.35",
+            null),
+        const VideoEffect(
+            'Rainbow',
+            '🌈',
+            "hue=h='t*60':s=1.3",
+            null),
+        const VideoEffect(
+            'Thermal',
+            '🔥',
+            'format=gray,format=rgb24,pseudocolor=preset=inferno',
+            null),
+        const VideoEffect(
+            'Mosaic',
+            '🧩',
+            'scale=trunc(iw/24):trunc(ih/24):flags=neighbor,'
+                'scale=iw*24:ih*24:flags=neighbor,'
+                'scale=trunc(iw/2)*2:trunc(ih/2)*2',
+            null),
+        const VideoEffect(
+            'Fog',
+            '🌫️',
+            'gblur=sigma=14,'
+                'eq=brightness=0.09:contrast=0.9:saturation=0.72',
+            _fogPreview),
+        const VideoEffect(
+            'Triple',
+            '3️⃣',
+            'split=3[t1][t2][t3];'
+                '[t1]crop=iw:trunc(ih/3/2)*2:0:ih/3[b1];'
+                '[t2]crop=iw:trunc(ih/3/2)*2:0:ih/3[b2];'
+                '[t3]crop=iw:trunc(ih/3/2)*2:0:ih/3[b3];'
+                '[b1][b2][b3]vstack=inputs=3,'
+                'scale=trunc(iw/2)*2:trunc(ih/2)*2',
+            null),
+        const VideoEffect(
+            'Frame',
+            '🖼️',
+            'drawbox=x=0:y=0:w=iw:h=ih:color=black@0.35:t=3,'
+                "pad=w=iw*1.12:h=ih*1.12:x='(ow-iw)/2':y='(oh-ih)/2'"
+                ':color=white,'
+                'scale=trunc(iw/2)*2:trunc(ih/2)*2',
+            null),
+        const VideoEffect(
+            'Camcorder',
+            '📹',
+            'eq=saturation=0.92:contrast=1.03,noise=alls=10:allf=t,'
+                "drawtext=fontfile=__CHASKA_FONT__:text='● REC'"
+                ':fontcolor=red:fontsize=h/20:x=w*0.05:y=h*0.04,'
+                "drawtext=fontfile=__CHASKA_FONT__:text='__CHASKA_DATE__'"
+                ':fontcolor=white:fontsize=h/26'
+                ':x=w-text_w-w*0.05:y=h-text_h-h*0.04',
+            null),
+        const VideoEffect(
+            'Echo Trail',
+            '👻',
+            "tmix=frames=5:weights='1 1 1 1 1'",
+            null),
+        const VideoEffect(
+            'X-Ray',
+            '☠️',
+            'negate,colorbalance=gs=0.3:gm=0.18:bm=-0.1,'
+                'eq=contrast=1.3:saturation=0.55',
+            _xrayPreview),
+        const VideoEffect(
+            'Underwater',
+            '🌊',
+            'colortemperature=temperature=4600:mix=0.75,'
+                'colorbalance=gs=0.14:bs=0.16:gm=0.08:bm=0.1,'
+                'eq=saturation=0.92,gblur=sigma=1.1',
+            _underwaterPreview),
       ];
 }
 
@@ -424,8 +550,19 @@ class VideoEditService {
     // Build the video filter chain: a selected effect replaces the
     // colour filter (its graph includes its own grade); text is last.
     final vfParts = <String>[];
-    final baseChain =
+    var baseChain =
         options.effect.ffmpegGraph ?? options.filter.ffmpegFilter;
+    if (baseChain != null &&
+        (baseChain.contains('__CHASKA_FONT__') ||
+            baseChain.contains('__CHASKA_DATE__'))) {
+      // Some effects (Camcorder) draw their own text inside the graph
+      // and carry placeholders for the bundled font path and today's
+      // date — resolve them here, at processing time.
+      final font = await _fontFile();
+      baseChain = baseChain
+          .replaceAll('__CHASKA_FONT__', font.path)
+          .replaceAll('__CHASKA_DATE__', _dateStamp());
+    }
     if (baseChain != null) {
       vfParts.add(baseChain);
     }
@@ -489,6 +626,17 @@ class VideoEditService {
       throw Exception(_failMsg);
     }
     return out;
+  }
+
+  /// Camcorder-style date stamp, e.g. "22 OCT 2026". Contains no
+  /// drawtext syntax characters, so it is safe inside a filter graph.
+  static String _dateStamp() {
+    const months = [
+      'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
+      'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'
+    ];
+    final now = DateTime.now();
+    return '${now.day} ${months[now.month - 1]} ${now.year}';
   }
 
   /// drawtext treats : ' \ % [ ] , ; as syntax. Strip them so the
