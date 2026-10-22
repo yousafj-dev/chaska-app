@@ -7,13 +7,17 @@ import 'package:chaska/services/auth_service.dart';
 import 'package:chaska/services/firestore_service.dart';
 import 'package:chaska/screens/auth/auth_screen.dart';
 import 'package:chaska/screens/profile/edit_profile_screen.dart';
+import 'package:chaska/screens/profile/profile_menu_screen.dart';
+import 'package:chaska/widgets/profile_stats_row.dart';
 import 'package:chaska/widgets/video_feed.dart';
 
-/// Profile: avatar, nickname, bio (from `users/{uid}`), stats
-/// (videos + following counts), my videos grid with thumbnails,
-/// edit-profile entry, logout. TikTok-style layout: the compact
-/// header scrolls away as the videos grid scrolls up, while the
-/// Videos | Favorites | Reposts tab bar stays pinned.
+/// Profile: avatar, nickname, bio (from `users/{uid}`), TikTok
+/// stats row (Following / Followers / Likes, lists on tap), my
+/// videos grid with thumbnails, edit-profile entry, the ☰ menu
+/// (activity / offline / QR / settings) and logout. TikTok-style
+/// layout: the compact header scrolls away as the videos grid
+/// scrolls up, while the Videos | Favorites | Reposts tab bar
+/// stays pinned.
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
 
@@ -27,6 +31,16 @@ class ProfileScreen extends StatelessWidget {
       appBar: AppBar(
         title: Text('@${auth.displayName}'),
         actions: [
+          IconButton(
+            tooltip: 'Menu',
+            icon: const Icon(Icons.menu),
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                    builder: (_) => const ProfileMenuScreen()),
+              );
+            },
+          ),
           IconButton(
             tooltip: 'Edit profile',
             icon: const Icon(Icons.edit_outlined),
@@ -152,22 +166,7 @@ class ProfileScreen extends StatelessWidget {
         ],
         const SizedBox(height: 8),
         if (uid != null && AuthService.firebaseReady)
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              StreamBuilder<List<ChaskaVideo>>(
-                stream: FirestoreService.instance.myVideos(uid),
-                builder: (context, snap) =>
-                    _stat('${snap.data?.length ?? 0}', 'Videos'),
-              ),
-              const SizedBox(width: 28),
-              StreamBuilder<int>(
-                stream: FirestoreService.instance.followingCount(uid),
-                builder: (context, snap) =>
-                    _stat('${snap.data ?? 0}', 'Following'),
-              ),
-            ],
-          ),
+          ProfileStatsRow(uid: uid),
         const SizedBox(height: 8),
         OutlinedButton.icon(
           onPressed: () {
@@ -187,27 +186,6 @@ class ProfileScreen extends StatelessWidget {
               borderRadius: BorderRadius.circular(12),
             ),
           ),
-        ),
-      ],
-    );
-  }
-
-  Widget _stat(String value, String label) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          value,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 15,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          label,
-          style: const TextStyle(color: AppTheme.muted, fontSize: 11),
         ),
       ],
     );

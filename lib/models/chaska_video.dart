@@ -17,6 +17,10 @@ class ChaskaVideo {
 
   /// How many times this video has been reposted.
   final int repostCount;
+
+  /// How many times this video was actually shared out (system
+  /// share sheet or copy-link from the in-app share sheet).
+  final int shareCount;
   final DateTime createdAt;
 
   const ChaskaVideo({
@@ -30,6 +34,7 @@ class ChaskaVideo {
     this.commentCount = 0,
     this.soundName = 'Original sound',
     this.repostCount = 0,
+    this.shareCount = 0,
     required this.createdAt,
   });
 
@@ -69,6 +74,7 @@ class ChaskaVideo {
       commentCount: (d['commentCount'] ?? 0) as int,
       soundName: (d['soundName'] ?? 'Original sound') as String,
       repostCount: (d['repostCount'] ?? 0) as int,
+      shareCount: (d['shareCount'] ?? 0) as int,
       createdAt: ts,
     );
   }
@@ -83,6 +89,7 @@ class ChaskaVideo {
         'commentCount': commentCount,
         'soundName': soundName,
         'repostCount': repostCount,
+        'shareCount': shareCount,
         'createdAt': FieldValue.serverTimestamp(),
       };
 }

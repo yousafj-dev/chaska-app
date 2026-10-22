@@ -37,6 +37,12 @@ class FirestoreService {
   CollectionReference _repostsCol(String uid) =>
       _users.doc(uid).collection('reposts');
 
+  CollectionReference _hiddenCol(String uid) =>
+      _users.doc(uid).collection('hidden');
+
+  CollectionReference _historyCol(String uid) =>
+      _users.doc(uid).collection('history');
+
   /// Live profile of one user (`users/{uid}`). Emits null when the
   /// doc does not exist yet or Firebase is not ready.
   Stream<ChaskaUser?> userProfile(String uid) {
@@ -272,11 +278,14 @@ class FirestoreService {
   }
 
   /// Follow / unfollow [targetUid] for the signed-in user.
+  /// The doc carries a `targetUid` field so follower counts can be
+  /// computed with a collection-group query over `following`.
   Future<void> setFollowing(String targetUid, bool follow) async {
     final myUid = AuthService.instance.uid;
     if (myUid == null) throw Exception('Please log in first.');
     if (follow) {
       await _followingCol(myUid).doc(targetUid).set({
+        'targetUid': targetUid,
         'createdAt': FieldValue.serverTimestamp(),
       });
     } else {
@@ -284,14 +293,85 @@ class FirestoreService {
     }
   }
 
-  /// How many creators [uid] follows.
+  /// How many creators [uid] follows — exact aggregate count of
+  /// users/{uid}/following, re-run when the subcollection changes.
   Stream<int> followingCount(String uid) {
     try {
-      return _followingCol(uid)
-          .snapshots()
-          .map((s) => s.docs.length);
+      return _followingCol(uid).snapshots().asyncMap((_) async {
+        final agg = await _followingCol(uid).count().get();
+        return agg.count ?? 0;
+      });
     } catch (e) {
       debugPrint('followingCount failed: $e');
+      return Stream.value(0);
+    }
+  }
+
+  /// How many users follow [uid]: aggregate count over every
+  /// `following` doc whose targetUid is [uid]. Following docs
+  /// written before the targetUid field existed are not counted.
+  Stream<int> followersCount(String uid) {
+    try {
+      final q = _dbSafe
+          .collectionGroup('following')
+          .where('targetUid', isEqualTo: uid);
+      return q.snapshots().asyncMap((_) async {
+        final agg = await q.count().get();
+        return agg.count ?? 0;
+      });
+    } catch (e) {
+      debugPrint('followersCount failed: $e');
+      return Stream.value(0);
+    }
+  }
+
+  /// Ids of everyone who follows [uid] (doc parents of the
+  /// collection-group matches).
+  Stream<List<String>> followersIds(String uid) {
+    try {
+      return _dbSafe
+          .collectionGroup('following')
+          .where('targetUid', isEqualTo: uid)
+          .snapshots()
+          .map((s) => s.docs
+              .map((d) => d.reference.parent.parent?.id)
+              .whereType<String>()
+              .toList());
+    } catch (e) {
+      debugPrint('followersIds failed: $e');
+      return Stream.value(const []);
+    }
+  }
+
+  /// Whether [theirUid] follows the signed-in user (drives the
+  /// "Follow back" button state).
+  Stream<bool> followsMe(String theirUid) {
+    final myUid = AuthService.instance.uid;
+    if (myUid == null) return Stream.value(false);
+    try {
+      return _followingCol(theirUid)
+          .doc(myUid)
+          .snapshots()
+          .map((d) => d.exists);
+    } catch (e) {
+      debugPrint('followsMe failed: $e');
+      return Stream.value(false);
+    }
+  }
+
+  /// Total likes across all of [uid]'s videos, summed client-side
+  /// from their videos query (fine at this scale).
+  Stream<int> likesTotal(String uid) {
+    try {
+      return _videos.where('uid', isEqualTo: uid).snapshots().map(
+            (s) => s.docs.fold<int>(0, (sum, d) {
+              final data = d.data() as Map<String, dynamic>?;
+              final likes = data?['likes'];
+              return sum + (likes is int ? likes : 0);
+            }),
+          );
+    } catch (e) {
+      debugPrint('likesTotal failed: $e');
       return Stream.value(0);
     }
   }
@@ -486,6 +566,131 @@ class FirestoreService {
     batch.delete(_favoritesCol(myUid).doc(video.id));
     batch.delete(_repostsCol(myUid).doc(video.id));
     await batch.commit();
+  }
+
+  // ---------------------------------------------------------------
+  // Share count
+  // ---------------------------------------------------------------
+
+  /// Counts one real share-out (system share or copy link).
+  Future<void> incrementShare(String videoId) async {
+    try {
+      await _videos.doc(videoId).update({
+        'shareCount': FieldValue.increment(1),
+      });
+    } catch (e) {
+      debugPrint('incrementShare failed: $e');
+    }
+  }
+
+  // ---------------------------------------------------------------
+  // Hidden videos ("Not interested") + reports
+  // Data: users/{myUid}/hidden/{videoId} = {videoId, createdAt}
+  // ---------------------------------------------------------------
+
+  /// Ids the signed-in user marked "Not interested" — the feed
+  /// filters these out client-side.
+  Stream<List<String>> hiddenIds(String uid) {
+    try {
+      return _hiddenCol(uid)
+          .snapshots()
+          .map((s) => s.docs.map((d) => d.id).toList());
+    } catch (e) {
+      debugPrint('hiddenIds failed: $e');
+      return Stream.value(const []);
+    }
+  }
+
+  Future<void> hideVideo(String videoId) async {
+    final myUid = AuthService.instance.uid;
+    if (myUid == null) throw Exception('Please log in first.');
+    await _hiddenCol(myUid).doc(videoId).set({
+      'videoId': videoId,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// Files a report for moderation review.
+  Future<void> reportVideo(String videoId) async {
+    final myUid = AuthService.instance.uid;
+    if (myUid == null) throw Exception('Please log in first.');
+    await _dbSafe.collection('reports').add({
+      'videoId': videoId,
+      'reporterUid': myUid,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  // ---------------------------------------------------------------
+  // Watch history + liked videos (Activity center)
+  // Data: users/{myUid}/history/{videoId} = {videoId, watchedAt}
+  // ---------------------------------------------------------------
+
+  /// Videos already recorded this app session, so the feed writes
+  /// at most one history entry per video per session.
+  static final Set<String> _watchedThisSession = {};
+
+  /// Records that the signed-in user watched [videoId]. Fire and
+  /// forget: never throws, never blocks playback.
+  void recordWatch(String videoId) {
+    final myUid = AuthService.instance.uid;
+    if (myUid == null || !AuthService.firebaseReady) return;
+    if (!_watchedThisSession.add(videoId)) return;
+    try {
+      _historyCol(myUid).doc(videoId).set({
+        'videoId': videoId,
+        'watchedAt': FieldValue.serverTimestamp(),
+      }).catchError((Object e) {
+        debugPrint('recordWatch failed: $e');
+      });
+    } catch (e) {
+      debugPrint('recordWatch failed: $e');
+    }
+  }
+
+  /// Watched videos, most recently watched first. Ids resolve to
+  /// video docs (deleted videos are skipped); sorted client-side
+  /// to avoid needing a composite index.
+  Stream<List<ChaskaVideo>> historyVideos(String uid) {
+    try {
+      return _historyCol(uid).snapshots().asyncMap((s) async {
+        final docs = s.docs.toList()
+          ..sort((a, b) {
+            final ta = (a.data() as Map<String, dynamic>?)?['watchedAt'];
+            final tb = (b.data() as Map<String, dynamic>?)?['watchedAt'];
+            final da = ta is Timestamp ? ta.toDate() : DateTime(0);
+            final db = tb is Timestamp ? tb.toDate() : DateTime(0);
+            return db.compareTo(da);
+          });
+        final out = <ChaskaVideo>[];
+        for (final d in docs) {
+          final vdoc = await _videos.doc(d.id).get();
+          if (vdoc.exists) out.add(ChaskaVideo.fromDoc(vdoc));
+        }
+        return out;
+      });
+    } catch (e) {
+      debugPrint('historyVideos failed: $e');
+      return Stream.value(const []);
+    }
+  }
+
+  /// Videos the user liked (the likedBy array on the video doc),
+  /// newest first. Single-field query + client-side sort.
+  Stream<List<ChaskaVideo>> likedVideos(String uid) {
+    try {
+      return _videos
+          .where('likedBy', arrayContains: uid)
+          .snapshots()
+          .map((s) {
+        final list = s.docs.map(ChaskaVideo.fromDoc).toList()
+          ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        return list;
+      });
+    } catch (e) {
+      debugPrint('likedVideos failed: $e');
+      return Stream.value(const []);
+    }
   }
 
   // ---------------------------------------------------------------

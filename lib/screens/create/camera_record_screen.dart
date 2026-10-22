@@ -3,10 +3,15 @@ import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:chaska/core/theme/app_theme.dart';
 import 'package:chaska/screens/create/edit_video_screen.dart';
+import 'package:chaska/services/video_edit_service.dart';
 
-/// In-app camera recorder: live preview, front/back flip, elapsed
-/// timer, 60-second max with auto-stop. The finished recording goes to
-/// the edit screen (filters / music / text) before posting.
+/// In-app camera recorder: FULL-SCREEN live preview (cover fit,
+/// portrait), front/back flip, elapsed timer, 60-second max with
+/// auto-stop, and a TikTok-style live filter row above the record
+/// button — tapping a filter tints the preview immediately, and
+/// the chosen filter is carried into the edit screen pre-selected
+/// so the posted video gets that exact filter baked in. The
+/// finished recording goes to the edit screen before posting.
 class CameraRecordScreen extends StatefulWidget {
   /// Sound name pre-attached from a sound page's "Use this sound".
   final String? initialSoundName;
@@ -29,6 +34,11 @@ class _CameraRecordScreenState extends State<CameraRecordScreen>
   int _elapsed = 0;
   Timer? _timer;
   String? _error;
+
+  /// Live filter selected on the record screen (Normal by
+  /// default). Previewed via [VideoFilter.previewMatrix]; carried
+  /// into the edit screen so it is baked when the video posts.
+  VideoFilter _filter = VideoFilters.all.first;
 
   @override
   void initState() {
@@ -159,6 +169,7 @@ class _CameraRecordScreenState extends State<CameraRecordScreen>
           builder: (_) => EditVideoScreen(
             videoPath: file.path,
             initialSoundName: widget.initialSoundName,
+            initialFilterName: _filter.name,
           ),
         ),
       );
@@ -206,12 +217,7 @@ class _CameraRecordScreenState extends State<CameraRecordScreen>
                 if (_initializing || c == null)
                   const Center(child: CircularProgressIndicator())
                 else
-                  Center(
-                    child: AspectRatio(
-                      aspectRatio: c.value.aspectRatio,
-                      child: CameraPreview(c),
-                    ),
-                  ),
+                  _fullScreenPreview(c),
                 Positioned(
                   top: MediaQuery.of(context).padding.top + 64,
                   left: 0,
@@ -245,49 +251,163 @@ class _CameraRecordScreenState extends State<CameraRecordScreen>
                 Positioned(
                   left: 0,
                   right: 0,
-                  bottom: 36,
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  bottom: 28,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      const SizedBox(width: 56),
-                      GestureDetector(
-                        onTap: _toggleRecord,
-                        child: Container(
-                          width: 76,
-                          height: 76,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            border:
-                                Border.all(color: Colors.white, width: 4),
-                          ),
-                          child: Center(
+                      _filtersRow(),
+                      const SizedBox(height: 14),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        children: [
+                          const SizedBox(width: 56),
+                          GestureDetector(
+                            onTap: _toggleRecord,
                             child: Container(
-                              width: _recording ? 30 : 58,
-                              height: _recording ? 30 : 58,
+                              width: 76,
+                              height: 76,
                               decoration: BoxDecoration(
-                                color: AppTheme.accent2,
-                                shape: _recording
-                                    ? BoxShape.rectangle
-                                    : BoxShape.circle,
-                                borderRadius: _recording
-                                    ? BorderRadius.circular(6)
-                                    : null,
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                    color: Colors.white, width: 4),
+                              ),
+                              child: Center(
+                                child: Container(
+                                  width: _recording ? 30 : 58,
+                                  height: _recording ? 30 : 58,
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.accent2,
+                                    shape: _recording
+                                        ? BoxShape.rectangle
+                                        : BoxShape.circle,
+                                    borderRadius: _recording
+                                        ? BorderRadius.circular(6)
+                                        : null,
+                                  ),
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                      ),
-                      IconButton(
-                        onPressed: _flip,
-                        iconSize: 34,
-                        icon: const Icon(Icons.flip_camera_ios_outlined,
-                            color: Colors.white),
+                          IconButton(
+                            onPressed: _flip,
+                            iconSize: 34,
+                            icon: const Icon(
+                                Icons.flip_camera_ios_outlined,
+                                color: Colors.white),
+                          ),
+                        ],
                       ),
                     ],
                   ),
                 ),
               ],
             ),
+    );
+  }
+
+  /// The camera preview scaled to COVER the whole screen (the
+  /// standard cover recipe for the camera plugin): without this
+  /// the preview renders as a small landscape strip in the middle
+  /// of the portrait screen. The live filter's preview matrix is
+  /// applied over it when one is selected.
+  Widget _fullScreenPreview(CameraController c) {
+    final size = MediaQuery.of(context).size;
+    var scale = size.aspectRatio * c.value.aspectRatio;
+    if (scale < 1) scale = 1 / scale;
+    Widget preview = Transform.scale(
+      scale: scale,
+      child: Center(child: CameraPreview(c)),
+    );
+    final matrix = _filter.previewMatrix;
+    if (matrix != null) {
+      preview = ColorFiltered(
+        colorFilter: ColorFilter.matrix(matrix),
+        child: preview,
+      );
+    }
+    return ClipRect(child: preview);
+  }
+
+  /// TikTok/Snapchat-style filter strip above the record button:
+  /// the same 20 colour filters as the edit screen. Each chip is a
+  /// small circular swatch (tinted by the filter's own matrix) with
+  /// the filter name under it; the selected chip gets a violet ring.
+  Widget _filtersRow() {
+    return SizedBox(
+      height: 76,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        itemCount: VideoFilters.all.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 10),
+        itemBuilder: (_, i) {
+          final f = VideoFilters.all[i];
+          final selected = f.name == _filter.name;
+          Widget swatch = Container(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  Color(0xFF9E7BD8),
+                  Color(0xFF3E2A5A),
+                  Color(0xFFE8B04B),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+            ),
+          );
+          if (f.previewMatrix != null) {
+            swatch = ColorFiltered(
+              colorFilter: ColorFilter.matrix(f.previewMatrix!),
+              child: swatch,
+            );
+          }
+          return GestureDetector(
+            onTap: _recording
+                ? null
+                : () => setState(() => _filter = f),
+            child: SizedBox(
+              width: 54,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: selected
+                            ? AppTheme.accent
+                            : Colors.white38,
+                        width: selected ? 2.5 : 1,
+                      ),
+                    ),
+                    child: ClipOval(child: swatch),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    f.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: selected ? Colors.white : Colors.white70,
+                      fontWeight: selected
+                          ? FontWeight.w700
+                          : FontWeight.w400,
+                      shadows: const [
+                        Shadow(color: Colors.black54, blurRadius: 3),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
     );
   }
 }

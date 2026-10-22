@@ -24,6 +24,18 @@ class AuthService extends ChangeNotifier {
   User? _user;
   bool _initialized = false;
 
+  /// True once the REAL session state is known: either a non-null
+  /// [FirebaseAuth.currentUser] at startup, or the first
+  /// authStateChanges event (which always fires once with the
+  /// persisted user — or null when genuinely signed out).
+  ///
+  /// The splash gate MUST wait for this before routing. Reading
+  /// currentUser alone at cold start races the native session
+  /// restore and can return null for a signed-in user, which used
+  /// to drop the user on the login screen on every app open.
+  bool _authResolved = false;
+  bool get authResolved => _authResolved;
+
   FirebaseAuth get _authSafe {
     _auth ??= FirebaseAuth.instance;
     return _auth!;
@@ -57,16 +69,27 @@ class AuthService extends ChangeNotifier {
   Future<void> init() async {
     if (_initialized) return;
     _initialized = true;
-    if (!firebaseReady) return;
+    if (!firebaseReady) {
+      // Offline mode: nothing to restore; the gate can decide now.
+      _authResolved = true;
+      return;
+    }
     try {
+      // Fast path only: a non-null currentUser is a definite
+      // signed-in session. A null here proves NOTHING at cold
+      // start (native restore may still be in flight), so in that
+      // case only the first stream event resolves the state.
       _user = _authSafe.currentUser;
+      if (_user != null) _authResolved = true;
       _authSafe.authStateChanges().listen((u) {
         _user = u;
+        _authResolved = true;
         notifyListeners();
       });
       notifyListeners();
     } catch (e) {
       debugPrint('AuthService.init failed: $e');
+      _authResolved = true;
     }
   }
 

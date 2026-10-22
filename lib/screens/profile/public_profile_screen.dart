@@ -4,6 +4,8 @@ import 'package:chaska/models/chaska_user.dart';
 import 'package:chaska/models/chaska_video.dart';
 import 'package:chaska/services/auth_service.dart';
 import 'package:chaska/services/firestore_service.dart';
+import 'package:chaska/widgets/follow_button.dart';
+import 'package:chaska/widgets/profile_stats_row.dart';
 import 'package:chaska/widgets/video_feed.dart';
 
 /// Public profile of any creator: avatar, name, bio, video grid
@@ -80,98 +82,12 @@ class PublicProfileScreen extends StatelessWidget {
           ),
         ],
         const SizedBox(height: 12),
-        _statsRow(),
+        ProfileStatsRow(uid: uid),
         if (!_isMe) ...[
           const SizedBox(height: 14),
-          _followButton(context),
+          FollowButton(targetUid: uid),
         ],
       ],
-    );
-  }
-
-  Widget _statsRow() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        StreamBuilder<List<ChaskaVideo>>(
-          stream: FirestoreService.instance.myVideos(uid),
-          builder: (context, snap) =>
-              _stat('${snap.data?.length ?? 0}', 'Videos'),
-        ),
-        const SizedBox(width: 36),
-        StreamBuilder<int>(
-          stream: FirestoreService.instance.followingCount(uid),
-          builder: (context, snap) =>
-              _stat('${snap.data ?? 0}', 'Following'),
-        ),
-      ],
-    );
-  }
-
-  Widget _stat(String value, String label) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          value,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 16,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          label,
-          style: const TextStyle(color: AppTheme.muted, fontSize: 12),
-        ),
-      ],
-    );
-  }
-
-  Widget _followButton(BuildContext context) {
-    return StreamBuilder<bool>(
-      stream: FirestoreService.instance.isFollowing(uid),
-      builder: (context, snap) {
-        final following = snap.data ?? false;
-        return GestureDetector(
-          onTap: () async {
-            try {
-              await FirestoreService.instance
-                  .setFollowing(uid, !following);
-            } catch (e) {
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(
-                        e.toString().replaceFirst('Exception: ', '')),
-                  ),
-                );
-              }
-            }
-          },
-          child: Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 42, vertical: 11),
-            decoration: BoxDecoration(
-              gradient: following ? null : AppTheme.primaryGradient,
-              color: following ? AppTheme.card : null,
-              border: following
-                  ? Border.all(color: Colors.white24)
-                  : null,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Text(
-              following ? 'Following' : 'Follow',
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w700,
-                fontSize: 14,
-              ),
-            ),
-          ),
-        );
-      },
     );
   }
 

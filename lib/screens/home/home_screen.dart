@@ -115,19 +115,36 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  /// Stream of the ids this user marked "Not interested" — feed
+  /// lists are filtered against it client-side.
+  Stream<List<String>> get _hiddenStream {
+    final myUid = AuthService.instance.uid;
+    if (myUid == null) return Stream.value(const []);
+    return FirestoreService.instance.hiddenIds(myUid);
+  }
+
   Widget _forYouFeed() {
-    return StreamBuilder<List<ChaskaVideo>>(
-      stream: FirestoreService.instance.videoFeed(),
-      builder: (context, snap) {
-        if (snap.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        if (snap.hasError) {
-          return _message('Could not load the feed. Please try again.');
-        }
-        final videos = snap.data ?? [];
-        if (videos.isEmpty) return _emptyBody();
-        return PagedVideoFeed(videos: videos);
+    return StreamBuilder<List<String>>(
+      stream: _hiddenStream,
+      builder: (context, hiddenSnap) {
+        final hidden = (hiddenSnap.data ?? const <String>[]).toSet();
+        return StreamBuilder<List<ChaskaVideo>>(
+          stream: FirestoreService.instance.videoFeed(),
+          builder: (context, snap) {
+            if (snap.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (snap.hasError) {
+              return _message(
+                  'Could not load the feed. Please try again.');
+            }
+            final videos = (snap.data ?? [])
+                .where((v) => !hidden.contains(v.id))
+                .toList();
+            if (videos.isEmpty) return _emptyBody();
+            return PagedVideoFeed(videos: videos);
+          },
+        );
       },
     );
   }
@@ -153,24 +170,34 @@ class _HomeScreenState extends State<HomeScreen> {
             'Follow creators to see their videos here.',
           );
         }
-        return StreamBuilder<List<ChaskaVideo>>(
-          stream: FirestoreService.instance.followingVideos(ids),
-          builder: (context, snap) {
-            if (snap.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            if (snap.hasError) {
-              return _message(
-                  'Could not load the feed. Please try again.');
-            }
-            final videos = snap.data ?? [];
-            if (videos.isEmpty) {
-              return _iconMessage(
-                Icons.video_library_outlined,
-                'No videos yet from the people you follow.',
-              );
-            }
-            return PagedVideoFeed(videos: videos);
+        return StreamBuilder<List<String>>(
+          stream: _hiddenStream,
+          builder: (context, hiddenSnap) {
+            final hidden =
+                (hiddenSnap.data ?? const <String>[]).toSet();
+            return StreamBuilder<List<ChaskaVideo>>(
+              stream: FirestoreService.instance.followingVideos(ids),
+              builder: (context, snap) {
+                if (snap.connectionState == ConnectionState.waiting) {
+                  return const Center(
+                      child: CircularProgressIndicator());
+                }
+                if (snap.hasError) {
+                  return _message(
+                      'Could not load the feed. Please try again.');
+                }
+                final videos = (snap.data ?? [])
+                    .where((v) => !hidden.contains(v.id))
+                    .toList();
+                if (videos.isEmpty) {
+                  return _iconMessage(
+                    Icons.video_library_outlined,
+                    'No videos yet from the people you follow.',
+                  );
+                }
+                return PagedVideoFeed(videos: videos);
+              },
+            );
           },
         );
       },

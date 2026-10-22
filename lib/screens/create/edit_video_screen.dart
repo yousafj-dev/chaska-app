@@ -21,10 +21,15 @@ class EditVideoScreen extends StatefulWidget {
   /// Sound name pre-attached from a sound page's "Use this sound".
   final String? initialSoundName;
 
+  /// Filter chosen LIVE on the record screen — pre-selected here
+  /// so the posted video gets exactly that filter baked in.
+  final String? initialFilterName;
+
   const EditVideoScreen({
     super.key,
     required this.videoPath,
     this.initialSoundName,
+    this.initialFilterName,
   });
 
   @override
@@ -53,6 +58,13 @@ class _EditVideoScreenState extends State<EditVideoScreen> {
   void initState() {
     super.initState();
     _sound = TextEditingController(text: widget.initialSoundName ?? '');
+    final filterName = widget.initialFilterName;
+    if (filterName != null) {
+      _filter = VideoFilters.all.firstWhere(
+        (f) => f.name == filterName,
+        orElse: () => VideoFilters.all.first,
+      );
+    }
     _initPlayer();
   }
 

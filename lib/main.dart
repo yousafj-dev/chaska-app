@@ -28,6 +28,10 @@ class ChaskaApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ChangeNotifierProvider(
+      // lazy: false — start auth resolution at app start, not on
+      // first read, so the persisted session is known by the time
+      // the splash gate decides where to route.
+      lazy: false,
       create: (_) => AuthService.instance..init(),
       child: MaterialApp(
         title: 'Chaska',

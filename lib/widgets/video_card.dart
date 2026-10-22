@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:share_plus/share_plus.dart';
 import 'package:video_player/video_player.dart';
 import 'package:chaska/core/theme/app_theme.dart';
 import 'package:chaska/models/chaska_user.dart';
@@ -9,6 +8,7 @@ import 'package:chaska/services/firestore_service.dart';
 import 'package:chaska/screens/profile/public_profile_screen.dart';
 import 'package:chaska/screens/sound/sound_page.dart';
 import 'package:chaska/widgets/comments_sheet.dart';
+import 'package:chaska/widgets/share_sheet.dart';
 
 /// One full-screen video page in the feed: autoplaying video,
 /// double-tap to like, right-side action column, bottom caption.
@@ -20,14 +20,30 @@ import 'package:chaska/widgets/comments_sheet.dart';
 /// disposed with the widget. An async init that finishes after the
 /// card moved on to another video is discarded, so a stale player
 /// can never bleed into the wrong page.
+/// Playback-only URL for the feed player. Cloudinary uploads are
+/// streamed through a lightweight delivery variant (auto low
+/// quality, max 720 wide, auto codec) so playback STARTS fast —
+/// the original file can be several times larger. Everything else
+/// (downloads, offline, sharing) keeps using the original URL.
+String playbackUrlFor(String url) {
+  if (!url.contains('/upload/')) return url;
+  return url.replaceFirst(
+      '/upload/', '/upload/q_auto:low,w_720,c_limit,vc_auto/');
+}
+
 class VideoCard extends StatefulWidget {
   final ChaskaVideo video;
   final bool isActive;
+
+  /// True for the page right after the active one: its player is
+  /// initialized (not played) so a swipe starts instantly.
+  final bool preload;
 
   const VideoCard({
     super.key,
     required this.video,
     required this.isActive,
+    this.preload = false,
   });
 
   @override
@@ -46,7 +62,16 @@ class _VideoCardState extends State<VideoCard> {
   @override
   void initState() {
     super.initState();
-    if (widget.isActive) _ensurePlayer();
+    if (widget.isActive) {
+      _ensurePlayer();
+      // Watch history (Activity center): one write per video per
+      // app session, throttled inside the service.
+      FirestoreService.instance.recordWatch(widget.video.id);
+    } else if (widget.preload) {
+      // Next page: warm the player up (never plays from here —
+      // _ensurePlayer only plays when this card is active).
+      _ensurePlayer();
+    }
   }
 
   @override
@@ -55,16 +80,26 @@ class _VideoCardState extends State<VideoCard> {
     if (old.video.id != widget.video.id) {
       // Re-bound to a different video: drop the old player entirely.
       _teardownPlayer();
-      if (widget.isActive) _ensurePlayer();
+      if (widget.isActive) {
+        _ensurePlayer();
+        FirestoreService.instance.recordWatch(widget.video.id);
+      } else if (widget.preload) {
+        _ensurePlayer();
+      }
       return;
     }
     if (old.isActive != widget.isActive) {
       if (widget.isActive) {
         _ensurePlayer();
+        FirestoreService.instance.recordWatch(widget.video.id);
         _ctrl?.play();
       } else {
         _ctrl?.pause();
       }
+      return;
+    }
+    if (!old.preload && widget.preload && !widget.isActive) {
+      _ensurePlayer();
     }
   }
 
@@ -72,8 +107,9 @@ class _VideoCardState extends State<VideoCard> {
     if (_boundId == widget.video.id && (_ctrl != null || _initializing)) {
       return;
     }
-    final url = widget.video.videoUrl;
-    if (url.isEmpty) return;
+    final rawUrl = widget.video.videoUrl;
+    if (rawUrl.isEmpty) return;
+    final url = playbackUrlFor(rawUrl);
     final id = widget.video.id;
     _boundId = id;
     _initializing = true;
@@ -174,36 +210,6 @@ class _VideoCardState extends State<VideoCard> {
     _showMsg(e.toString().replaceFirst('Exception: ', ''));
   }
 
-  Future<void> _onToggleFavorite() async {
-    if (!_requireLogin()) return;
-    try {
-      final nowFav =
-          await FirestoreService.instance.toggleFavorite(widget.video);
-      if (mounted) {
-        _showMsg(nowFav
-            ? 'Saved to favorites'
-            : 'Removed from favorites');
-      }
-    } catch (e) {
-      if (mounted) _showErr(e);
-    }
-  }
-
-  Future<void> _onToggleRepost() async {
-    if (!_requireLogin()) return;
-    try {
-      final nowReposted =
-          await FirestoreService.instance.toggleRepost(widget.video);
-      if (mounted) {
-        _showMsg(nowReposted
-            ? 'Reposted to your profile'
-            : 'Repost removed');
-      }
-    } catch (e) {
-      if (mounted) _showErr(e);
-    }
-  }
-
   void _openSoundPage() {
     Navigator.of(context).push(
       MaterialPageRoute(
@@ -212,12 +218,11 @@ class _VideoCardState extends State<VideoCard> {
     );
   }
 
-  void _share() {
-    final caption = widget.video.caption.trim();
-    final text = caption.isNotEmpty
-        ? '$caption\n${widget.video.videoUrl}'
-        : 'Watch this video on Chaska!\n${widget.video.videoUrl}';
-    Share.share(text);
+  /// TikTok-style: the rail Share button opens the "Share to"
+  /// sheet (Repost / Favorite / Download / Copy link / Share /
+  /// Not interested / Report all live there now).
+  void _openShareSheet() {
+    showShareSheet(context, widget.video);
   }
 
   void _openAuthorProfile() {
@@ -289,43 +294,11 @@ class _VideoCardState extends State<VideoCard> {
                   onTap: _openComments,
                 ),
                 const SizedBox(height: 10),
-                StreamBuilder<bool>(
-                  stream: FirestoreService.instance
-                      .isReposted(widget.video.id),
-                  builder: (context, snap) {
-                    final reposted = snap.data ?? false;
-                    return _GlassActionButton(
-                      icon: Icons.repeat,
-                      iconColor:
-                          reposted ? AppTheme.accent2 : Colors.white,
-                      label: _shortNum(
-                          widget.video.repostCount < 0
-                              ? 0
-                              : widget.video.repostCount),
-                      onTap: _onToggleRepost,
-                    );
-                  },
-                ),
-                const SizedBox(height: 10),
-                StreamBuilder<bool>(
-                  stream: FirestoreService.instance
-                      .isFavorite(widget.video.id),
-                  builder: (context, snap) {
-                    final fav = snap.data ?? false;
-                    return _GlassActionButton(
-                      icon: fav ? Icons.bookmark : Icons.bookmark_border,
-                      iconColor: fav ? AppTheme.accent2 : Colors.white,
-                      label: 'Save',
-                      onTap: _onToggleFavorite,
-                    );
-                  },
-                ),
-                const SizedBox(height: 10),
                 _GlassActionButton(
                   icon: Icons.share_outlined,
                   iconColor: Colors.white,
-                  label: 'Share',
-                  onTap: _share,
+                  label: _shortNum(widget.video.shareCount),
+                  onTap: _openShareSheet,
                 ),
               ],
             ),
@@ -411,10 +384,15 @@ class _VideoCardState extends State<VideoCard> {
     );
   }
 
-  /// Uploader avatar at the top of the rail (tap → creator profile).
+  /// Uploader avatar at the top of the rail (tap → creator
+  /// profile), with a TikTok-style "+" badge to follow the creator
+  /// right from the feed. The badge hides on your own videos and
+  /// once you already follow the creator.
   /// Reads the live profile (photo + nickname) from `users/{uid}`,
   /// falling back to the username stored on the video.
   Widget _ownerAvatar() {
+    final myUid = AuthService.instance.uid;
+    final isMine = myUid != null && myUid == widget.video.uid;
     return StreamBuilder<ChaskaUser?>(
       stream: FirestoreService.instance.userProfile(widget.video.uid),
       builder: (context, snap) {
@@ -423,30 +401,79 @@ class _VideoCardState extends State<VideoCard> {
         final name = (profile != null && profile.displayName.isNotEmpty)
             ? profile.displayName
             : widget.video.username;
-        return GestureDetector(
-          onTap: _openAuthorProfile,
-          child: Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.white, width: 1.5),
-            ),
-            child: CircleAvatar(
-              backgroundColor: AppTheme.card,
-              backgroundImage:
-                  photo.isNotEmpty ? NetworkImage(photo) : null,
-              child: photo.isNotEmpty
-                  ? null
-                  : Text(
-                      name.isNotEmpty ? name[0].toUpperCase() : '?',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 15,
-                      ),
-                    ),
-            ),
+        return SizedBox(
+          width: 46,
+          height: 50,
+          child: Stack(
+            clipBehavior: Clip.none,
+            alignment: Alignment.topCenter,
+            children: [
+              GestureDetector(
+                onTap: _openAuthorProfile,
+                child: Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 1.5),
+                  ),
+                  child: CircleAvatar(
+                    backgroundColor: AppTheme.card,
+                    backgroundImage:
+                        photo.isNotEmpty ? NetworkImage(photo) : null,
+                    child: photo.isNotEmpty
+                        ? null
+                        : Text(
+                            name.isNotEmpty
+                                ? name[0].toUpperCase()
+                                : '?',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 15,
+                            ),
+                          ),
+                  ),
+                ),
+              ),
+              if (!isMine)
+                Positioned(
+                  bottom: 0,
+                  child: StreamBuilder<bool>(
+                    stream: FirestoreService.instance
+                        .isFollowing(widget.video.uid),
+                    builder: (context, fSnap) {
+                      if (fSnap.data ?? false) {
+                        return const SizedBox.shrink();
+                      }
+                      return GestureDetector(
+                        onTap: () async {
+                          if (!_requireLogin()) return;
+                          try {
+                            await FirestoreService.instance
+                                .setFollowing(widget.video.uid, true);
+                            if (mounted) {
+                              _showMsg('Following @$name');
+                            }
+                          } catch (e) {
+                            if (mounted) _showErr(e);
+                          }
+                        },
+                        child: Container(
+                          width: 18,
+                          height: 18,
+                          decoration: const BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: AppTheme.accent2,
+                          ),
+                          child: const Icon(Icons.add,
+                              color: Colors.white, size: 13),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+            ],
           ),
         );
       },

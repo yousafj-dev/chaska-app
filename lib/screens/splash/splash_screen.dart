@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:chaska/core/theme/app_theme.dart';
@@ -6,6 +7,12 @@ import 'package:chaska/screens/auth/auth_screen.dart';
 import 'package:chaska/widgets/main_shell.dart';
 
 /// Splash: Chaska logo + tagline, then routes to auth or home.
+///
+/// Routing waits for BOTH the minimum brand display AND the real
+/// auth state ([AuthService.authResolved]). Firebase Auth persists
+/// the session natively on Android, so once the persisted state is
+/// known, a signed-in user goes straight home — login is only
+/// shown when genuinely signed out (or after an explicit logout).
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
 
@@ -14,25 +21,46 @@ class SplashScreen extends StatefulWidget {
 }
 
 class _SplashScreenState extends State<SplashScreen> {
+  late final AuthService _auth;
+  Timer? _timer;
+  bool _delayDone = false;
+  bool _routed = false;
+
   @override
   void initState() {
     super.initState();
-    Future.delayed(const Duration(milliseconds: 1400), _go);
+    _auth = context.read<AuthService>();
+    _auth.addListener(_maybeRoute);
+    _timer = Timer(const Duration(milliseconds: 1400), () {
+      _delayDone = true;
+      _maybeRoute();
+    });
+    _maybeRoute();
   }
 
-  void _go() {
-    if (!mounted) return;
-    final signedIn = context.read<AuthService>().isSignedIn;
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _auth.removeListener(_maybeRoute);
+    super.dispose();
+  }
+
+  void _maybeRoute() {
+    if (_routed || !mounted) return;
+    if (!_delayDone || !_auth.authResolved) return;
+    _routed = true;
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(
         builder: (_) =>
-            signedIn ? const MainShell() : const AuthScreen(),
+            _auth.isSignedIn ? const MainShell() : const AuthScreen(),
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    // Watched only so the "restoring session" spinner clears.
+    final resolved = context.watch<AuthService>().authResolved;
     return Scaffold(
       backgroundColor: AppTheme.bg,
       body: Center(
@@ -79,6 +107,17 @@ class _SplashScreenState extends State<SplashScreen> {
                 color: AppTheme.muted,
               ),
             ),
+            const SizedBox(height: 28),
+            // Session still restoring — subtle progress cue.
+            if (!resolved)
+              const SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.5,
+                  color: AppTheme.accent,
+                ),
+              ),
           ],
         ),
       ),
