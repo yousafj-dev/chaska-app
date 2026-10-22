@@ -39,6 +39,14 @@ android {
         // flag during build.
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+
+        // Shrink the APK: ship native libs (FFmpeg etc.) for arm64-v8a ONLY.
+        // Without this, every ABI (arm64-v8a, armeabi-v7a, x86, x86_64) is
+        // bundled and the APK balloons to ~269 MB. arm64-v8a covers nearly
+        // all phones from 2017 onward.
+        ndk {
+            abiFilters += listOf("arm64-v8a")
+        }
     }
 
     buildTypes {
@@ -47,6 +55,12 @@ android {
             // cleanly over previous builds (same signature every time).
             // (Final Play Store key will replace this before launch.)
             signingConfig = signingConfigs.getByName("chaska")
+
+            // Belt-and-braces: restrict release native ABIs to arm64-v8a too
+            // (matches defaultConfig above, which is what applies build-wide).
+            ndk {
+                abiFilters += listOf("arm64-v8a")
+            }
         }
     }
 }
