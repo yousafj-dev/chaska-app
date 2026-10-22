@@ -267,13 +267,13 @@ class _VideoCardState extends State<VideoCard> {
             ),
           // Right-side action column: owner avatar + glass buttons
           Positioned(
-            right: 10,
-            bottom: 80,
+            right: 8,
+            bottom: 78,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 _ownerAvatar(),
-                const SizedBox(height: 16),
+                const SizedBox(height: 10),
                 _GlassActionButton(
                   icon: liked ? Icons.favorite : Icons.favorite_border,
                   iconColor: liked ? AppTheme.accent2 : Colors.white,
@@ -281,14 +281,14 @@ class _VideoCardState extends State<VideoCard> {
                   popOnTap: true,
                   onTap: _onDoubleTap,
                 ),
-                const SizedBox(height: 14),
+                const SizedBox(height: 10),
                 _GlassActionButton(
                   icon: Icons.comment_outlined,
                   iconColor: Colors.white,
                   label: _shortNum(widget.video.commentCount),
                   onTap: _openComments,
                 ),
-                const SizedBox(height: 14),
+                const SizedBox(height: 10),
                 StreamBuilder<bool>(
                   stream: FirestoreService.instance
                       .isReposted(widget.video.id),
@@ -306,7 +306,7 @@ class _VideoCardState extends State<VideoCard> {
                     );
                   },
                 ),
-                const SizedBox(height: 14),
+                const SizedBox(height: 10),
                 StreamBuilder<bool>(
                   stream: FirestoreService.instance
                       .isFavorite(widget.video.id),
@@ -320,7 +320,7 @@ class _VideoCardState extends State<VideoCard> {
                     );
                   },
                 ),
-                const SizedBox(height: 14),
+                const SizedBox(height: 10),
                 _GlassActionButton(
                   icon: Icons.share_outlined,
                   iconColor: Colors.white,
@@ -426,8 +426,8 @@ class _VideoCardState extends State<VideoCard> {
         return GestureDetector(
           onTap: _openAuthorProfile,
           child: Container(
-            width: 48,
-            height: 48,
+            width: 40,
+            height: 40,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               border: Border.all(color: Colors.white, width: 1.5),
@@ -443,7 +443,7 @@ class _VideoCardState extends State<VideoCard> {
                       style: const TextStyle(
                         color: Colors.white,
                         fontWeight: FontWeight.w700,
-                        fontSize: 18,
+                        fontSize: 15,
                       ),
                     ),
             ),
@@ -521,8 +521,8 @@ class _GlassActionButtonState extends State<_GlassActionButton>
           ScaleTransition(
             scale: _scale,
             child: Container(
-              width: 52,
-              height: 52,
+              width: 42,
+              height: 42,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: Colors.black.withOpacity(0.45),
@@ -531,15 +531,15 @@ class _GlassActionButtonState extends State<_GlassActionButton>
                   width: 1,
                 ),
               ),
-              child: Icon(widget.icon, color: widget.iconColor, size: 30),
+              child: Icon(widget.icon, color: widget.iconColor, size: 24),
             ),
           ),
-          const SizedBox(height: 5),
+          const SizedBox(height: 3),
           Text(
             widget.label,
             style: const TextStyle(
               color: Colors.white,
-              fontSize: 12,
+              fontSize: 11,
               fontWeight: FontWeight.w700,
               shadows: [
                 Shadow(

@@ -11,7 +11,9 @@ import 'package:chaska/widgets/video_feed.dart';
 
 /// Profile: avatar, nickname, bio (from `users/{uid}`), stats
 /// (videos + following counts), my videos grid with thumbnails,
-/// edit-profile entry, logout.
+/// edit-profile entry, logout. TikTok-style layout: the compact
+/// header scrolls away as the videos grid scrolls up, while the
+/// Videos | Favorites | Reposts tab bar stays pinned.
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
 
@@ -51,40 +53,51 @@ class ProfileScreen extends StatelessWidget {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          const SizedBox(height: 20),
-          if (uid != null && AuthService.firebaseReady)
-            StreamBuilder<ChaskaUser?>(
-              stream: FirestoreService.instance.userProfile(uid),
-              builder: (context, snap) => _header(context, auth, snap.data),
-            )
-          else
-            _header(context, auth, null),
-          const SizedBox(height: 14),
-          const Divider(color: Colors.white10, height: 1),
-          const TabBar(
-            indicatorColor: AppTheme.accent2,
-            labelColor: Colors.white,
-            unselectedLabelColor: AppTheme.muted,
-            labelStyle:
-                TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
-            tabs: [
-              Tab(icon: Icon(Icons.grid_view, size: 20), text: 'Videos'),
-              Tab(icon: Icon(Icons.bookmark, size: 20), text: 'Favorites'),
-              Tab(icon: Icon(Icons.repeat, size: 20), text: 'Reposts'),
-            ],
-          ),
-          Expanded(
-            child: TabBarView(
+      body: NestedScrollView(
+        headerSliverBuilder: (context, innerBoxIsScrolled) => [
+          SliverToBoxAdapter(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                _videosTab(context, auth),
-                _favoritesTab(context, auth),
-                _repostsTab(context, auth),
+                const SizedBox(height: 12),
+                if (uid != null && AuthService.firebaseReady)
+                  StreamBuilder<ChaskaUser?>(
+                    stream: FirestoreService.instance.userProfile(uid),
+                    builder: (context, snap) =>
+                        _header(context, auth, snap.data),
+                  )
+                else
+                  _header(context, auth, null),
+                const SizedBox(height: 10),
+                const Divider(color: Colors.white10, height: 1),
               ],
             ),
           ),
+          SliverPersistentHeader(
+            pinned: true,
+            delegate: _PinnedTabBarDelegate(
+              const TabBar(
+                indicatorColor: AppTheme.accent2,
+                labelColor: Colors.white,
+                unselectedLabelColor: AppTheme.muted,
+                labelStyle:
+                    TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                tabs: [
+                  Tab(icon: Icon(Icons.grid_view, size: 20), text: 'Videos'),
+                  Tab(icon: Icon(Icons.bookmark, size: 20), text: 'Favorites'),
+                  Tab(icon: Icon(Icons.repeat, size: 20), text: 'Reposts'),
+                ],
+              ),
+            ),
+          ),
         ],
+        body: TabBarView(
+          children: [
+            _videosTab(context, auth),
+            _favoritesTab(context, auth),
+            _repostsTab(context, auth),
+          ],
+        ),
       ),
       ),
     );
@@ -103,7 +116,7 @@ class ProfileScreen extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         CircleAvatar(
-          radius: 44,
+          radius: 32,
           backgroundColor: AppTheme.accent.withOpacity(0.2),
           backgroundImage: photo.isNotEmpty ? NetworkImage(photo) : null,
           child: photo.isNotEmpty
@@ -111,33 +124,33 @@ class ProfileScreen extends StatelessWidget {
               : Text(
                   name.isNotEmpty ? name[0].toUpperCase() : '?',
                   style: const TextStyle(
-                    fontSize: 36,
+                    fontSize: 26,
                     fontWeight: FontWeight.w800,
                     color: AppTheme.accent,
                   ),
                 ),
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 6),
         Text(
           '@$name',
           style: const TextStyle(
-            fontSize: 18,
+            fontSize: 16,
             fontWeight: FontWeight.w700,
             color: Colors.white,
           ),
         ),
         if (bio.isNotEmpty) ...[
-          const SizedBox(height: 6),
+          const SizedBox(height: 4),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 32),
             child: Text(
               bio,
               textAlign: TextAlign.center,
-              style: const TextStyle(color: Colors.white70, fontSize: 13),
+              style: const TextStyle(color: Colors.white70, fontSize: 12),
             ),
           ),
         ],
-        const SizedBox(height: 12),
+        const SizedBox(height: 8),
         if (uid != null && AuthService.firebaseReady)
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -147,7 +160,7 @@ class ProfileScreen extends StatelessWidget {
                 builder: (context, snap) =>
                     _stat('${snap.data?.length ?? 0}', 'Videos'),
               ),
-              const SizedBox(width: 36),
+              const SizedBox(width: 28),
               StreamBuilder<int>(
                 stream: FirestoreService.instance.followingCount(uid),
                 builder: (context, snap) =>
@@ -155,17 +168,20 @@ class ProfileScreen extends StatelessWidget {
               ),
             ],
           ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 8),
         OutlinedButton.icon(
           onPressed: () {
             Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const EditProfileScreen()),
             );
           },
-          icon: const Icon(Icons.edit_outlined, size: 16),
-          label: const Text('Edit profile'),
+          icon: const Icon(Icons.edit_outlined, size: 15),
+          label: const Text('Edit profile',
+              style: TextStyle(fontSize: 13)),
           style: OutlinedButton.styleFrom(
             foregroundColor: Colors.white,
+            padding:
+                const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
             side: const BorderSide(color: Colors.white24),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12),
@@ -184,14 +200,14 @@ class ProfileScreen extends StatelessWidget {
           value,
           style: const TextStyle(
             color: Colors.white,
-            fontSize: 16,
+            fontSize: 15,
             fontWeight: FontWeight.w800,
           ),
         ),
         const SizedBox(height: 2),
         Text(
           label,
-          style: const TextStyle(color: AppTheme.muted, fontSize: 12),
+          style: const TextStyle(color: AppTheme.muted, fontSize: 11),
         ),
       ],
     );
@@ -440,4 +456,29 @@ class ProfileScreen extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Pins the Videos | Favorites | Reposts tab bar at the top of the
+/// profile while the header above it scrolls/collapses away
+/// (used inside the profile's NestedScrollView).
+class _PinnedTabBarDelegate extends SliverPersistentHeaderDelegate {
+  final TabBar tabBar;
+
+  const _PinnedTabBarDelegate(this.tabBar);
+
+  @override
+  double get minExtent => tabBar.preferredSize.height;
+
+  @override
+  double get maxExtent => tabBar.preferredSize.height;
+
+  @override
+  Widget build(
+      BuildContext context, double shrinkOffset, bool overlapsContent) {
+    return Container(color: AppTheme.bg, child: tabBar);
+  }
+
+  @override
+  bool shouldRebuild(_PinnedTabBarDelegate oldDelegate) =>
+      tabBar != oldDelegate.tabBar;
 }
