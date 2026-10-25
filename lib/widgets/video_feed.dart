@@ -9,14 +9,22 @@ import 'package:chaska/widgets/video_card.dart';
 /// player is pre-initialized (paused) so swiping starts playback
 /// instantly; pages that scroll out of the viewport are disposed
 /// by the PageView itself, which tears their players down.
+/// When the hosting tab is hidden (the shell keeps tabs mounted),
+/// [feedVisible] pauses the active card in place — it resumes
+/// from the same position when the tab is shown again.
 class PagedVideoFeed extends StatefulWidget {
   final List<ChaskaVideo> videos;
   final int initialPage;
+
+  /// False while the hosting tab/screen is not the visible one;
+  /// forwarded to every card so playback pauses (position kept).
+  final bool feedVisible;
 
   const PagedVideoFeed({
     super.key,
     required this.videos,
     this.initialPage = 0,
+    this.feedVisible = true,
   });
 
   @override
@@ -55,6 +63,7 @@ class _PagedVideoFeedState extends State<PagedVideoFeed> {
         video: videos[i],
         isActive: i == _current,
         preload: i == _current + 1,
+        feedVisible: widget.feedVisible,
       ),
     );
   }

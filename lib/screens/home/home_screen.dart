@@ -10,10 +10,16 @@ import 'package:chaska/widgets/video_feed.dart';
 /// MAIN screen: TikTok-style top tabs ("Following" | "For You"),
 /// a stories row under the tabs, and a vertical swipe video feed.
 ///
-/// Only the selected tab's feed is in the tree, so switching tabs
-/// disposes the hidden feed's video controllers.
+/// Only the selected top tab's feed is in the tree, so switching
+/// top tabs disposes the hidden feed's video controllers. The
+/// bottom-nav shell keeps this screen mounted when another tab
+/// is selected, so it passes [isVisible] down to the feed: the
+/// playing video pauses while hidden and resumes in place.
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  /// Whether the Home bottom-nav tab is the selected one.
+  final bool isVisible;
+
+  const HomeScreen({super.key, this.isVisible = true});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -123,26 +129,46 @@ class _HomeScreenState extends State<HomeScreen> {
     return FirestoreService.instance.hiddenIds(myUid);
   }
 
+  /// Stream of the account ids this user blocked — their videos
+  /// are filtered out of both feeds client-side.
+  Stream<List<String>> get _blockedStream {
+    final myUid = AuthService.instance.uid;
+    if (myUid == null) return Stream.value(const []);
+    return FirestoreService.instance.blockedIds(myUid);
+  }
+
   Widget _forYouFeed() {
     return StreamBuilder<List<String>>(
       stream: _hiddenStream,
       builder: (context, hiddenSnap) {
         final hidden = (hiddenSnap.data ?? const <String>[]).toSet();
-        return StreamBuilder<List<ChaskaVideo>>(
-          stream: FirestoreService.instance.videoFeed(),
-          builder: (context, snap) {
-            if (snap.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            if (snap.hasError) {
-              return _message(
-                  'Could not load the feed. Please try again.');
-            }
-            final videos = (snap.data ?? [])
-                .where((v) => !hidden.contains(v.id))
-                .toList();
-            if (videos.isEmpty) return _emptyBody();
-            return PagedVideoFeed(videos: videos);
+        return StreamBuilder<List<String>>(
+          stream: _blockedStream,
+          builder: (context, blockedSnap) {
+            final blocked =
+                (blockedSnap.data ?? const <String>[]).toSet();
+            return StreamBuilder<List<ChaskaVideo>>(
+              stream: FirestoreService.instance.videoFeed(),
+              builder: (context, snap) {
+                if (snap.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (snap.hasError) {
+                  return _message(
+                      'Could not load the feed. Please try again.');
+                }
+                final videos = (snap.data ?? [])
+                    .where((v) =>
+                        !hidden.contains(v.id) &&
+                        !blocked.contains(v.uid))
+                    .toList();
+                if (videos.isEmpty) return _emptyBody();
+                return PagedVideoFeed(
+                  videos: videos,
+                  feedVisible: widget.isVisible,
+                );
+              },
+            );
           },
         );
       },
@@ -175,27 +201,40 @@ class _HomeScreenState extends State<HomeScreen> {
           builder: (context, hiddenSnap) {
             final hidden =
                 (hiddenSnap.data ?? const <String>[]).toSet();
-            return StreamBuilder<List<ChaskaVideo>>(
-              stream: FirestoreService.instance.followingVideos(ids),
-              builder: (context, snap) {
-                if (snap.connectionState == ConnectionState.waiting) {
-                  return const Center(
-                      child: CircularProgressIndicator());
-                }
-                if (snap.hasError) {
-                  return _message(
-                      'Could not load the feed. Please try again.');
-                }
-                final videos = (snap.data ?? [])
-                    .where((v) => !hidden.contains(v.id))
-                    .toList();
-                if (videos.isEmpty) {
-                  return _iconMessage(
-                    Icons.video_library_outlined,
-                    'No videos yet from the people you follow.',
-                  );
-                }
-                return PagedVideoFeed(videos: videos);
+            return StreamBuilder<List<String>>(
+              stream: _blockedStream,
+              builder: (context, blockedSnap) {
+                final blocked =
+                    (blockedSnap.data ?? const <String>[]).toSet();
+                return StreamBuilder<List<ChaskaVideo>>(
+                  stream: FirestoreService.instance.followingVideos(ids),
+                  builder: (context, snap) {
+                    if (snap.connectionState ==
+                        ConnectionState.waiting) {
+                      return const Center(
+                          child: CircularProgressIndicator());
+                    }
+                    if (snap.hasError) {
+                      return _message(
+                          'Could not load the feed. Please try again.');
+                    }
+                    final videos = (snap.data ?? [])
+                        .where((v) =>
+                            !hidden.contains(v.id) &&
+                            !blocked.contains(v.uid))
+                        .toList();
+                    if (videos.isEmpty) {
+                      return _iconMessage(
+                        Icons.video_library_outlined,
+                        'No videos yet from the people you follow.',
+                      );
+                    }
+                    return PagedVideoFeed(
+                      videos: videos,
+                      feedVisible: widget.isVisible,
+                    );
+                  },
+                );
               },
             );
           },

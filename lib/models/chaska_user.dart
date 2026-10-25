@@ -8,11 +8,20 @@ class ChaskaUser {
   final String photoUrl;
   final String bio;
 
+  /// In-app notification preferences (Settings → Notifications).
+  /// The Inbox list filters by these; absent fields mean "on".
+  final bool notifLikes;
+  final bool notifComments;
+  final bool notifFollows;
+
   const ChaskaUser({
     required this.uid,
     this.displayName = '',
     this.photoUrl = '',
     this.bio = '',
+    this.notifLikes = true,
+    this.notifComments = true,
+    this.notifFollows = true,
   });
 
   factory ChaskaUser.fromDoc(DocumentSnapshot doc) {
@@ -22,6 +31,9 @@ class ChaskaUser {
       displayName: (d['displayName'] ?? '') as String,
       photoUrl: (d['photoUrl'] ?? '') as String,
       bio: (d['bio'] ?? '') as String,
+      notifLikes: (d['notifLikes'] as bool?) ?? true,
+      notifComments: (d['notifComments'] as bool?) ?? true,
+      notifFollows: (d['notifFollows'] as bool?) ?? true,
     );
   }
 

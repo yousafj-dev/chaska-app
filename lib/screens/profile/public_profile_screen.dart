@@ -21,7 +21,38 @@ class PublicProfileScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Profile')),
+      appBar: AppBar(
+        title: const Text('Profile'),
+        actions: [
+          if (!_isMe)
+            PopupMenuButton<String>(
+              icon: const Icon(Icons.more_vert),
+              color: AppTheme.card,
+              onSelected: (value) {
+                if (value == 'block') _toggleBlock(context);
+                if (value == 'report') _report(context);
+              },
+              itemBuilder: (_) => [
+                PopupMenuItem<String>(
+                  value: 'block',
+                  child: StreamBuilder<bool>(
+                    stream:
+                        FirestoreService.instance.isBlocked(uid),
+                    builder: (context, snap) => Text(
+                      (snap.data ?? false) ? 'Unblock' : 'Block',
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                  ),
+                ),
+                const PopupMenuItem<String>(
+                  value: 'report',
+                  child: Text('Report',
+                      style: TextStyle(color: Colors.white)),
+                ),
+              ],
+            ),
+        ],
+      ),
       body: Column(
         children: [
           const SizedBox(height: 20),
@@ -35,6 +66,43 @@ class PublicProfileScreen extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  Future<void> _toggleBlock(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final blocked =
+          await FirestoreService.instance.isBlocked(uid).first;
+      await FirestoreService.instance.setBlocked(uid, !blocked);
+      messenger.showSnackBar(
+        SnackBar(
+            content:
+                Text(blocked ? 'Account unblocked.' : 'Account blocked.')),
+      );
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(
+            content:
+                Text(e.toString().replaceFirst('Exception: ', ''))),
+      );
+    }
+  }
+
+  Future<void> _report(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await FirestoreService.instance.reportUser(uid);
+      messenger.showSnackBar(
+        const SnackBar(
+            content: Text('Reported. Our team will review this account.')),
+      );
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(
+            content:
+                Text(e.toString().replaceFirst('Exception: ', ''))),
+      );
+    }
   }
 
   Widget _header(BuildContext context, ChaskaUser? profile) {

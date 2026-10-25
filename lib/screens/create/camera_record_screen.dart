@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:chaska/core/theme/app_theme.dart';
@@ -12,6 +13,18 @@ import 'package:chaska/services/video_edit_service.dart';
 /// the chosen filter is carried into the edit screen pre-selected
 /// so the posted video gets that exact filter baked in. The
 /// finished recording goes to the edit screen before posting.
+///
+/// Zoom is gesture-only (no +/− buttons): pinch on the preview,
+/// drag one finger up/down on the preview, or HOLD the record
+/// button and slide up/down — release stops the recording, like
+/// Snapchat/TikTok. A quick tap on the record button still
+/// toggles tap-to-start / tap-to-stop.
+///
+/// Exposure is LOCKED at the moment recording starts: the camera
+/// plugin rebuilds its capture session in startVideoRecording
+/// and its auto-exposure reconverges from scratch (visibly darker
+/// in dim rooms), so the preview's settled exposure is frozen
+/// across the transition and restored afterwards.
 class CameraRecordScreen extends StatefulWidget {
   /// Sound name pre-attached from a sound page's "Use this sound".
   final String? initialSoundName;
@@ -40,6 +53,23 @@ class _CameraRecordScreenState extends State<CameraRecordScreen>
   /// into the edit screen so it is baked when the video posts.
   VideoFilter _filter = VideoFilters.all.first;
 
+  // --- Zoom (gesture-driven) -------------------------------------
+  double _minZoom = 1;
+  double _maxZoom = 1;
+  double _zoom = 1;
+  bool _showZoom = false;
+  Timer? _zoomFadeTimer;
+  double _scaleBaseZoom = 1;
+  double _dragAccum = 0;
+
+  // --- Hold-to-record --------------------------------------------
+  bool _pressActive = false;
+  double _downY = 0;
+  double _downZoom = 1;
+  bool _holding = false;
+  Timer? _holdTimer;
+  static const _holdThreshold = Duration(milliseconds: 260);
+
   @override
   void initState() {
     super.initState();
@@ -51,6 +81,8 @@ class _CameraRecordScreenState extends State<CameraRecordScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _timer?.cancel();
+    _holdTimer?.cancel();
+    _zoomFadeTimer?.cancel();
     _controller?.dispose();
     super.dispose();
   }
@@ -105,6 +137,16 @@ class _CameraRecordScreenState extends State<CameraRecordScreen>
     );
     try {
       await c.initialize();
+      // Zoom range this device actually supports — never fake a
+      // level outside it. Start at 1.0× when the range allows.
+      try {
+        _minZoom = await c.getMinZoomLevel();
+        _maxZoom = await c.getMaxZoomLevel();
+      } catch (_) {
+        _minZoom = 1;
+        _maxZoom = 1;
+      }
+      _zoom = 1.0.clamp(_minZoom, _maxZoom);
       if (!mounted) {
         c.dispose();
         return;
@@ -133,12 +175,28 @@ class _CameraRecordScreenState extends State<CameraRecordScreen>
     await _initCamera(_cameraIndex);
   }
 
+  /// Tap semantics: start when idle, stop when recording.
   Future<void> _toggleRecord() async {
-    final c = _controller;
-    if (c == null || !c.value.isInitialized) return;
     if (_recording) {
       await _stop();
-      return;
+    } else {
+      await _startRecording();
+    }
+  }
+
+  /// The one recording funnel (tap AND hold-to-record both end
+  /// up here): lock the preview's exposure, then start.
+  Future<void> _startRecording() async {
+    final c = _controller;
+    if (c == null || !c.value.isInitialized || _recording) return;
+    // Freeze the exposure the preview has settled on BEFORE the
+    // plugin rebuilds the session for recording (which otherwise
+    // reconverges auto-exposure from scratch → darker picture).
+    try {
+      await c.setExposureMode(ExposureMode.locked);
+    } catch (_) {
+      // Some devices reject the lock — recording must not break
+      // because of the fix.
     }
     try {
       await c.startVideoRecording();
@@ -149,20 +207,30 @@ class _CameraRecordScreenState extends State<CameraRecordScreen>
         setState(() => _elapsed++);
         if (_elapsed >= _maxSeconds) _stop();
       });
-      setState(() => _recording = true);
+      if (mounted) setState(() => _recording = true);
     } on CameraException catch (e) {
       debugPrint('start recording failed: ${e.code}');
+      _holding = false;
+      await _restoreExposure();
       _showError('Recording could not start. Please try again.');
     }
+  }
+
+  Future<void> _restoreExposure() async {
+    try {
+      await _controller?.setExposureMode(ExposureMode.auto);
+    } catch (_) {}
   }
 
   Future<void> _stop() async {
     final c = _controller;
     if (c == null || !_recording) return;
+    _holding = false;
     _timer?.cancel();
     setState(() => _recording = false);
     try {
       final file = await c.stopVideoRecording();
+      await _restoreExposure();
       if (!mounted) return;
       await Navigator.of(context).pushReplacement(
         MaterialPageRoute(
@@ -175,7 +243,84 @@ class _CameraRecordScreenState extends State<CameraRecordScreen>
       );
     } on CameraException catch (e) {
       debugPrint('stop recording failed: ${e.code}');
+      await _restoreExposure();
       _showError('The recording could not be saved. Please try again.');
+    }
+  }
+
+  // --- Hold-to-record + slide zoom on the record button ----------
+
+  void _onRecordPointerDown(PointerDownEvent e) {
+    final c = _controller;
+    if (c == null || !c.value.isInitialized) return;
+    _pressActive = true;
+    _downY = e.position.dy;
+    _downZoom = _zoom;
+    _holdTimer?.cancel();
+    _holdTimer = Timer(_holdThreshold, () {
+      // Still holding and not already recording → hold-to-record.
+      if (_pressActive && !_recording) {
+        _holding = true;
+        _startRecording();
+      }
+    });
+  }
+
+  void _onRecordPointerMove(PointerMoveEvent e) {
+    if (!_pressActive || !_holding || !_recording) return;
+    // Slide up (dy grows) = zoom in, down = zoom out.
+    final dy = _downY - e.position.dy;
+    _setZoom(_downZoom * math.exp(dy / 180));
+  }
+
+  void _onRecordPointerUp(PointerUpEvent e) => _endPress();
+
+  void _onRecordPointerCancel(PointerCancelEvent e) => _endPress();
+
+  void _endPress() {
+    _holdTimer?.cancel();
+    final wasActive = _pressActive;
+    _pressActive = false;
+    if (!wasActive) return;
+    if (_holding) {
+      // Released after hold-to-record → stop and finalize.
+      _holding = false;
+      if (_recording) _stop();
+    } else {
+      // Quick tap: toggle tap-to-start / tap-to-stop.
+      _toggleRecord();
+    }
+  }
+
+  // --- Zoom --------------------------------------------------------
+
+  void _setZoom(double z) {
+    final c = _controller;
+    if (c == null || !c.value.isInitialized) return;
+    final clamped = z.clamp(_minZoom, _maxZoom);
+    if ((clamped - _zoom).abs() < 0.01) return;
+    _zoom = clamped;
+    c.setZoomLevel(clamped).catchError((_) {});
+    if (mounted) setState(() => _showZoom = true);
+    _zoomFadeTimer?.cancel();
+    _zoomFadeTimer = Timer(const Duration(milliseconds: 1200), () {
+      if (mounted) setState(() => _showZoom = false);
+    });
+  }
+
+  void _onScaleStart(ScaleStartDetails d) {
+    _scaleBaseZoom = _zoom;
+    _dragAccum = 0;
+  }
+
+  void _onScaleUpdate(ScaleUpdateDetails d) {
+    if (d.pointerCount > 1) {
+      // Pinch.
+      _setZoom(_scaleBaseZoom * d.scale);
+    } else {
+      // One-finger vertical drag on the preview.
+      _dragAccum += d.focalPointDelta.dy;
+      _setZoom(_scaleBaseZoom * math.exp(-_dragAccum / 160));
     }
   }
 
@@ -217,7 +362,11 @@ class _CameraRecordScreenState extends State<CameraRecordScreen>
                 if (_initializing || c == null)
                   const Center(child: CircularProgressIndicator())
                 else
-                  _fullScreenPreview(c),
+                  GestureDetector(
+                    onScaleStart: _onScaleStart,
+                    onScaleUpdate: _onScaleUpdate,
+                    child: _fullScreenPreview(c),
+                  ),
                 Positioned(
                   top: MediaQuery.of(context).padding.top + 64,
                   left: 0,
@@ -255,14 +404,35 @@ class _CameraRecordScreenState extends State<CameraRecordScreen>
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      if (_showZoom) ...[
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.black54,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            '${_zoom.toStringAsFixed(1)}×',
+                            style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                      ],
                       _filtersRow(),
                       const SizedBox(height: 14),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                         children: [
                           const SizedBox(width: 56),
-                          GestureDetector(
-                            onTap: _toggleRecord,
+                          Listener(
+                            onPointerDown: _onRecordPointerDown,
+                            onPointerMove: _onRecordPointerMove,
+                            onPointerUp: _onRecordPointerUp,
+                            onPointerCancel: _onRecordPointerCancel,
                             child: Container(
                               width: 76,
                               height: 76,
@@ -297,6 +467,20 @@ class _CameraRecordScreenState extends State<CameraRecordScreen>
                           ),
                         ],
                       ),
+                      if (!_recording) ...[
+                        const SizedBox(height: 10),
+                        const Text(
+                          'Tap to record, or hold and slide to zoom',
+                          style: TextStyle(
+                            color: Colors.white54,
+                            fontSize: 12,
+                            shadows: [
+                              Shadow(
+                                  color: Colors.black54, blurRadius: 3),
+                            ],
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),

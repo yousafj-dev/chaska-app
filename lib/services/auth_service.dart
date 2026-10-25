@@ -166,6 +166,66 @@ class AuthService extends ChangeNotifier {
     }
   }
 
+  /// Public re-authentication (used by the delete-account flow,
+  /// which must prove the password BEFORE any data is removed).
+  Future<void> reauthenticate(String currentPassword) =>
+      _reauthenticate(currentPassword);
+
+  /// Re-authenticates the signed-in user with their current
+  /// password. Required by Firebase before sensitive operations
+  /// (password change, account deletion).
+  Future<void> _reauthenticate(String currentPassword) async {
+    _ensureReady();
+    final u = _user ?? _authSafe.currentUser;
+    final email = u?.email;
+    if (u == null || email == null) {
+      throw Exception('Please log in first.');
+    }
+    try {
+      final cred = EmailAuthProvider.credential(
+        email: email,
+        password: currentPassword,
+      );
+      await u.reauthenticateWithCredential(cred);
+    } on FirebaseAuthException catch (e) {
+      if (e.code == 'wrong-password' ||
+          e.code == 'invalid-credential') {
+        throw Exception('Current password is incorrect.');
+      }
+      throw Exception(_friendly(e));
+    }
+  }
+
+  /// Changes the account password after re-authenticating with
+  /// the current one.
+  Future<void> changePassword(
+      String currentPassword, String newPassword) async {
+    if (newPassword.length < 6) {
+      throw Exception('New password must be at least 6 characters.');
+    }
+    await _reauthenticate(currentPassword);
+    try {
+      await (_user ?? _authSafe.currentUser)!.updatePassword(newPassword);
+    } on FirebaseAuthException catch (e) {
+      throw Exception(_friendly(e));
+    }
+  }
+
+  /// Permanently deletes the Firebase Auth account after
+  /// re-authenticating. Callers must delete the user's Firestore
+  /// data FIRST (see FirestoreService.deleteMyAccountData) — once
+  /// the Auth user is gone, its uid can no longer be matched.
+  Future<void> deleteAccount(String currentPassword) async {
+    await _reauthenticate(currentPassword);
+    try {
+      await (_user ?? _authSafe.currentUser)!.delete();
+    } on FirebaseAuthException catch (e) {
+      throw Exception(_friendly(e));
+    }
+    _user = null;
+    notifyListeners();
+  }
+
   Future<void> signOut() async {
     if (!firebaseReady) {
       _user = null;

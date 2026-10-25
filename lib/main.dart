@@ -1,12 +1,15 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:chaska/core/app_route_observer.dart';
 import 'package:chaska/core/theme/app_theme.dart';
 import 'package:chaska/services/auth_service.dart';
+import 'package:chaska/services/prefs_service.dart';
 import 'package:chaska/screens/splash/splash_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await PrefsService.load();
   // Firebase is optional at runtime: the app still opens (with friendly
   // offline messages) when init fails, e.g. before google-services.json
   // is added. Importing firebase_core is safe; only initializeApp()
@@ -37,6 +40,7 @@ class ChaskaApp extends StatelessWidget {
         title: 'Chaska',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.dark(),
+        navigatorObservers: [appRouteObserver],
         home: const SplashScreen(),
       ),
     );

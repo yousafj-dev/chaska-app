@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
+import 'package:chaska/core/app_route_observer.dart';
 import 'package:chaska/core/theme/app_theme.dart';
 import 'package:chaska/models/chaska_user.dart';
 import 'package:chaska/models/chaska_video.dart';
 import 'package:chaska/services/auth_service.dart';
 import 'package:chaska/services/firestore_service.dart';
+import 'package:chaska/services/prefs_service.dart';
 import 'package:chaska/screens/profile/public_profile_screen.dart';
 import 'package:chaska/screens/sound/sound_page.dart';
 import 'package:chaska/widgets/comments_sheet.dart';
@@ -27,8 +29,12 @@ import 'package:chaska/widgets/share_sheet.dart';
 /// (downloads, offline, sharing) keeps using the original URL.
 String playbackUrlFor(String url) {
   if (!url.contains('/upload/')) return url;
-  return url.replaceFirst(
-      '/upload/', '/upload/q_auto:low,w_720,c_limit,vc_auto/');
+  // Data Saver (Settings) drops the feed to an even lighter
+  // 540-wide variant; players created after the toggle use it.
+  final variant = PrefsService.dataSaver
+      ? '/upload/q_auto:low,w_540,c_limit,vc_auto/'
+      : '/upload/q_auto:low,w_720,c_limit,vc_auto/';
+  return url.replaceFirst('/upload/', variant);
 }
 
 class VideoCard extends StatefulWidget {
@@ -39,18 +45,26 @@ class VideoCard extends StatefulWidget {
   /// initialized (not played) so a swipe starts instantly.
   final bool preload;
 
+  /// True while the feed that hosts this card is actually on
+  /// screen (its bottom-nav tab is selected). The shell keeps
+  /// tabs mounted, so a hidden feed must NOT keep playing — it
+  /// pauses and later resumes from the same position.
+  final bool feedVisible;
+
   const VideoCard({
     super.key,
     required this.video,
     required this.isActive,
     this.preload = false,
+    this.feedVisible = true,
   });
 
   @override
   State<VideoCard> createState() => _VideoCardState();
 }
 
-class _VideoCardState extends State<VideoCard> {
+class _VideoCardState extends State<VideoCard>
+    with RouteAware, WidgetsBindingObserver {
   VideoPlayerController? _ctrl;
 
   /// The video id [_ctrl] (or the in-flight init) belongs to.
@@ -59,9 +73,28 @@ class _VideoCardState extends State<VideoCard> {
   bool _showHeart = false;
   bool _liking = false;
 
+  /// Playback gates besides the pager position. The video may
+  /// only play when ALL of them allow it; pausing never touches
+  /// the controller's position, so resuming continues exactly
+  /// where it stopped.
+  bool _routeCovered = false;
+  bool _appResumed = true;
+
+  /// The user paused with a single tap: an automatic resume
+  /// (returning to the feed / the app) must not override that.
+  bool _userPaused = false;
+
+  bool get _shouldPlay =>
+      widget.isActive &&
+      widget.feedVisible &&
+      !_routeCovered &&
+      _appResumed &&
+      !_userPaused;
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     if (widget.isActive) {
       _ensurePlayer();
       // Watch history (Activity center): one write per video per
@@ -69,8 +102,51 @@ class _VideoCardState extends State<VideoCard> {
       FirestoreService.instance.recordWatch(widget.video.id);
     } else if (widget.preload) {
       // Next page: warm the player up (never plays from here —
-      // _ensurePlayer only plays when this card is active).
+      // _ensurePlayer only plays when every gate allows it).
       _ensurePlayer();
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route is PageRoute) {
+      appRouteObserver.subscribe(this, route);
+    }
+  }
+
+  // RouteAware: another page pushed over ours → pause; it pops
+  // → resume (from the same position) if we were playing.
+  @override
+  void didPushNext() {
+    _routeCovered = true;
+    _applyPlayback();
+  }
+
+  @override
+  void didPopNext() {
+    _routeCovered = false;
+    _applyPlayback();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final resumed = state == AppLifecycleState.resumed;
+    if (resumed == _appResumed) return;
+    _appResumed = resumed;
+    _applyPlayback();
+  }
+
+  /// Single funnel for play/pause decisions: plays only when
+  /// every gate allows it, otherwise pauses in place.
+  void _applyPlayback() {
+    final c = _ctrl;
+    if (c == null || !c.value.isInitialized) return;
+    if (_shouldPlay) {
+      if (!c.value.isPlaying) c.play();
+    } else {
+      if (c.value.isPlaying) c.pause();
     }
   }
 
@@ -80,6 +156,7 @@ class _VideoCardState extends State<VideoCard> {
     if (old.video.id != widget.video.id) {
       // Re-bound to a different video: drop the old player entirely.
       _teardownPlayer();
+      _userPaused = false;
       if (widget.isActive) {
         _ensurePlayer();
         FirestoreService.instance.recordWatch(widget.video.id);
@@ -88,19 +165,15 @@ class _VideoCardState extends State<VideoCard> {
       }
       return;
     }
-    if (old.isActive != widget.isActive) {
-      if (widget.isActive) {
-        _ensurePlayer();
-        FirestoreService.instance.recordWatch(widget.video.id);
-        _ctrl?.play();
-      } else {
-        _ctrl?.pause();
-      }
-      return;
+    if (old.isActive != widget.isActive && widget.isActive) {
+      _userPaused = false;
+      _ensurePlayer();
+      FirestoreService.instance.recordWatch(widget.video.id);
     }
     if (!old.preload && widget.preload && !widget.isActive) {
       _ensurePlayer();
     }
+    _applyPlayback();
   }
 
   Future<void> _ensurePlayer() async {
@@ -123,7 +196,7 @@ class _VideoCardState extends State<VideoCard> {
         return;
       }
       setState(() => _ctrl = c);
-      if (widget.isActive) c.play();
+      _applyPlayback();
     } catch (e) {
       debugPrint('VideoCard init failed: $e');
       if (_boundId == id) _boundId = null;
@@ -141,6 +214,8 @@ class _VideoCardState extends State<VideoCard> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    appRouteObserver.unsubscribe(this);
     _teardownPlayer();
     super.dispose();
   }
@@ -245,9 +320,12 @@ class _VideoCardState extends State<VideoCard> {
         final c = _ctrl;
         if (c == null || !_ready) return;
         if (c.value.isPlaying) {
+          // Manual pause: automatic resumes must respect it.
+          _userPaused = true;
           c.pause();
         } else {
-          c.play();
+          _userPaused = false;
+          _applyPlayback();
         }
         setState(() {});
       },

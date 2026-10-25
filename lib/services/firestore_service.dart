@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:chaska/models/chaska_video.dart';
 import 'package:chaska/models/chaska_comment.dart';
+import 'package:chaska/models/chaska_notification.dart';
 import 'package:chaska/models/chaska_story.dart';
 import 'package:chaska/models/chaska_user.dart';
 import 'package:chaska/services/auth_service.dart';
@@ -42,6 +43,12 @@ class FirestoreService {
 
   CollectionReference _historyCol(String uid) =>
       _users.doc(uid).collection('history');
+
+  CollectionReference _blockedCol(String uid) =>
+      _users.doc(uid).collection('blocked');
+
+  CollectionReference get _notifications =>
+      _dbSafe.collection('chaska_notifications');
 
   /// Live profile of one user (`users/{uid}`). Emits null when the
   /// doc does not exist yet or Firebase is not ready.
@@ -157,6 +164,7 @@ class FirestoreService {
           'likes': FieldValue.increment(1),
           'likedBy': FieldValue.arrayUnion([myUid]),
         });
+        _notifyUser(toUid: video.uid, type: 'like', videoId: video.id);
       }
       return !liked;
     } catch (e) {
@@ -198,6 +206,21 @@ class FirestoreService {
     await _videos.doc(videoId).update({
       'commentCount': FieldValue.increment(1),
     });
+    // Notify the video's owner (never ourselves).
+    try {
+      final vdoc = await _videos.doc(videoId).get();
+      final owner = (vdoc.data() as Map<String, dynamic>?)?['uid'];
+      if (owner is String && owner.isNotEmpty) {
+        _notifyUser(
+          toUid: owner,
+          type: 'comment',
+          videoId: videoId,
+          text: trimmed,
+        );
+      }
+    } catch (e) {
+      debugPrint('comment notify lookup failed: $e');
+    }
   }
 
   // ---------------------------------------------------------------
@@ -288,6 +311,7 @@ class FirestoreService {
         'targetUid': targetUid,
         'createdAt': FieldValue.serverTimestamp(),
       });
+      _notifyUser(toUid: targetUid, type: 'follow');
     } else {
       await _followingCol(myUid).doc(targetUid).delete();
     }
@@ -713,5 +737,263 @@ class FirestoreService {
       debugPrint('videosBySound failed: $e');
       return Stream.value(const []);
     }
+  }
+
+  /// How many videos [uid] has posted (profile stats row).
+  Stream<int> videosCount(String uid) =>
+      myVideos(uid).map((list) => list.length);
+
+  // ---------------------------------------------------------------
+  // Notifications
+  // Data: chaska_notifications/{id} = {toUid, fromUid, fromName,
+  // type: like|comment|follow, videoId, text, read, createdAt}
+  // Written by the actor's client; the Inbox filters by the
+  // recipient's notif* preferences on users/{uid}.
+  // ---------------------------------------------------------------
+
+  /// Fire-and-forget notification write. Never throws, never
+  /// notifies a user about their own action.
+  void _notifyUser({
+    required String toUid,
+    required String type,
+    String videoId = '',
+    String text = '',
+  }) {
+    final auth = AuthService.instance;
+    final myUid = auth.uid;
+    if (myUid == null || toUid.isEmpty || toUid == myUid) return;
+    if (!AuthService.firebaseReady) return;
+    try {
+      _notifications.add({
+        'toUid': toUid,
+        'fromUid': myUid,
+        'fromName': auth.displayName,
+        'type': type,
+        'videoId': videoId,
+        'text': text,
+        'read': false,
+        'createdAt': FieldValue.serverTimestamp(),
+      }).then((_) {}, onError: (Object e) {
+        debugPrint('notify failed: $e');
+      });
+    } catch (e) {
+      debugPrint('notify failed: $e');
+    }
+  }
+
+  /// My notifications, newest first (single-field query + client
+  /// sort, same no-composite-index pattern as the rest of the app).
+  Stream<List<ChaskaNotification>> myNotifications() {
+    final myUid = AuthService.instance.uid;
+    if (myUid == null) return Stream.value(const []);
+    try {
+      return _notifications
+          .where('toUid', isEqualTo: myUid)
+          .snapshots()
+          .map((s) {
+        final list = s.docs.map(ChaskaNotification.fromDoc).toList()
+          ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        return list.take(100).toList();
+      });
+    } catch (e) {
+      debugPrint('myNotifications failed: $e');
+      return Stream.value(const []);
+    }
+  }
+
+  /// Live unread count for the Inbox tab badge.
+  Stream<int> unreadNotificationCount() => myNotifications()
+      .map((list) => list.where((n) => !n.read).length);
+
+  /// Marks every unread notification of mine as read (best effort).
+  Future<void> markAllNotificationsRead() async {
+    final myUid = AuthService.instance.uid;
+    if (myUid == null || !AuthService.firebaseReady) return;
+    try {
+      final qs = await _notifications
+          .where('toUid', isEqualTo: myUid)
+          .where('read', isEqualTo: false)
+          .get();
+      if (qs.docs.isEmpty) return;
+      final batch = _dbSafe.batch();
+      for (final d in qs.docs) {
+        batch.update(d.reference, {'read': true});
+      }
+      await batch.commit();
+    } catch (e) {
+      debugPrint('markAllNotificationsRead failed: $e');
+    }
+  }
+
+  /// Saves the Inbox notification toggles on my user doc.
+  Future<void> setNotifPrefs({
+    bool? likes,
+    bool? comments,
+    bool? follows,
+  }) async {
+    final myUid = AuthService.instance.uid;
+    if (myUid == null) throw Exception('Please log in first.');
+    final data = <String, dynamic>{};
+    if (likes != null) data['notifLikes'] = likes;
+    if (comments != null) data['notifComments'] = comments;
+    if (follows != null) data['notifFollows'] = follows;
+    if (data.isEmpty) return;
+    await _users.doc(myUid).set(data, SetOptions(merge: true));
+  }
+
+  // ---------------------------------------------------------------
+  // Blocked accounts
+  // Data: users/{myUid}/blocked/{targetUid} = {targetUid, createdAt}
+  // The feeds filter blocked authors out client-side.
+  // ---------------------------------------------------------------
+
+  Stream<List<String>> blockedIds(String uid) {
+    try {
+      return _blockedCol(uid)
+          .snapshots()
+          .map((s) => s.docs.map((d) => d.id).toList());
+    } catch (e) {
+      debugPrint('blockedIds failed: $e');
+      return Stream.value(const []);
+    }
+  }
+
+  Stream<bool> isBlocked(String targetUid) {
+    final myUid = AuthService.instance.uid;
+    if (myUid == null) return Stream.value(false);
+    try {
+      return _blockedCol(myUid)
+          .doc(targetUid)
+          .snapshots()
+          .map((d) => d.exists);
+    } catch (e) {
+      debugPrint('isBlocked failed: $e');
+      return Stream.value(false);
+    }
+  }
+
+  Future<void> setBlocked(String targetUid, bool block) async {
+    final myUid = AuthService.instance.uid;
+    if (myUid == null) throw Exception('Please log in first.');
+    if (block) {
+      await _blockedCol(myUid).doc(targetUid).set({
+        'targetUid': targetUid,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+      // Blocking also unfollows them — you can't follow an
+      // account you've blocked.
+      try {
+        await _followingCol(myUid).doc(targetUid).delete();
+      } catch (_) {}
+    } else {
+      await _blockedCol(myUid).doc(targetUid).delete();
+    }
+  }
+
+  /// Files a report about a user account for moderation review.
+  Future<void> reportUser(String reportedUid) async {
+    final myUid = AuthService.instance.uid;
+    if (myUid == null) throw Exception('Please log in first.');
+    await _dbSafe.collection('reports').add({
+      'reportedUid': reportedUid,
+      'reporterUid': myUid,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  // ---------------------------------------------------------------
+  // Delete account (Firestore half)
+  // ---------------------------------------------------------------
+
+  /// Deletes ALL of the signed-in user's Firestore data: their
+  /// videos (with comment threads), their follow entries on both
+  /// sides, their likes on other videos, their notifications, all
+  /// profile subcollections and the profile doc itself.
+  /// Best-effort per step so one failure can't strand the rest.
+  /// The Auth user is deleted by the caller afterwards.
+  ///
+  /// NOTE: Cloudinary media files are NOT deleted — uploads use an
+  /// unsigned preset, which cannot delete media. Only the app
+  /// records are removed.
+  Future<void> deleteMyAccountData() async {
+    final myUid = AuthService.instance.uid;
+    if (myUid == null) throw Exception('Please log in first.');
+
+    Future<void> step(String name, Future<void> Function() run) async {
+      try {
+        await run();
+      } catch (e) {
+        debugPrint('deleteMyAccountData/$name failed: $e');
+      }
+    }
+
+    // My videos + their comment threads (deleteVideo enforces
+    // ownership and does exactly this per video).
+    await step('videos', () async {
+      final mine = await myVideos(myUid).first;
+      for (final v in mine) {
+        await deleteVideo(v);
+      }
+    });
+
+    // My likes on other people's videos.
+    await step('likes', () async {
+      final qs = await _videos
+          .where('likedBy', arrayContains: myUid)
+          .get();
+      for (final d in qs.docs) {
+        await d.reference.update({
+          'likes': FieldValue.increment(-1),
+          'likedBy': FieldValue.arrayRemove([myUid]),
+        });
+      }
+    });
+
+    // People who follow me: their following docs pointing at me.
+    await step('followers', () async {
+      final qs = await _dbSafe
+          .collectionGroup('following')
+          .where('targetUid', isEqualTo: myUid)
+          .get();
+      for (final d in qs.docs) {
+        await d.reference.delete();
+      }
+    });
+
+    // My notifications, both directions.
+    await step('notifications', () async {
+      for (final field in ['toUid', 'fromUid']) {
+        final qs =
+            await _notifications.where(field, isEqualTo: myUid).get();
+        for (final d in qs.docs) {
+          await d.reference.delete();
+        }
+      }
+    });
+
+    // My profile doc + every subcollection under it.
+    await step('profile', () async {
+      for (final col in [
+        'following',
+        'favorites',
+        'reposts',
+        'hidden',
+        'history',
+        'blocked',
+      ]) {
+        while (true) {
+          final qs =
+              await _users.doc(myUid).collection(col).limit(200).get();
+          if (qs.docs.isEmpty) break;
+          final batch = _dbSafe.batch();
+          for (final d in qs.docs) {
+            batch.delete(d.reference);
+          }
+          await batch.commit();
+          if (qs.docs.length < 200) break;
+        }
+      }
+      await _users.doc(myUid).delete();
+    });
   }
 }

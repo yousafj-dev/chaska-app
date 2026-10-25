@@ -4,9 +4,10 @@ import 'package:chaska/services/firestore_service.dart';
 import 'package:chaska/screens/profile/user_list_screen.dart';
 
 /// TikTok-style stats row for profiles (own + public):
-/// **Following** and **Followers** are tappable and open the
-/// matching user list; **Likes** is the summed like count across
-/// all of the user's videos.
+/// **Videos** is the user's post count; **Following** and
+/// **Followers** are tappable and open the matching user list;
+/// **Likes** is the summed like count across all of the user's
+/// videos.
 class ProfileStatsRow extends StatelessWidget {
   final String uid;
 
@@ -17,6 +18,12 @@ class ProfileStatsRow extends StatelessWidget {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
+        StreamBuilder<int>(
+          stream: FirestoreService.instance.videosCount(uid),
+          builder: (context, snap) =>
+              _stat(context, '${snap.data ?? 0}', 'Videos', null),
+        ),
+        const SizedBox(width: 30),
         StreamBuilder<int>(
           stream: FirestoreService.instance.followingCount(uid),
           builder: (context, snap) => _stat(
