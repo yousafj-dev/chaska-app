@@ -1,4 +1,7 @@
+import 'dart:ui';
+
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:chaska/core/app_route_observer.dart';
@@ -17,6 +20,16 @@ void main() async {
   try {
     await Firebase.initializeApp();
     AuthService.firebaseReady = true;
+    // Automatic crash reporting (Firebase Crashlytics): fatal Flutter
+    // errors and uncaught async/platform errors are reported with the
+    // phone model, Android version and crash cause. Wired only on the
+    // Firebase-ready path, so offline mode is unaffected.
+    FlutterError.onError =
+        FirebaseCrashlytics.instance.recordFlutterFatalError;
+    PlatformDispatcher.instance.onError = (error, stack) {
+      FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+      return true;
+    };
     debugPrint('Chaska: Firebase ready');
   } catch (e) {
     debugPrint('Chaska: Firebase init failed (offline mode): $e');

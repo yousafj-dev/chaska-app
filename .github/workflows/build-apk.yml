@@ -39,6 +39,7 @@ jobs:
           tag_name: test-apk-${{ github.run_number }}
           name: Chaska test APK #${{ github.run_number }}
           body: |
+            NEW in this build: Firebase Crashlytics — automatic crash reporting (phone model, Android version, crash cause). Everything else is identical to the previous build (test-apk-60).
             Test build of Chaska (short video app).
             Install steps: allow "Install unknown apps" when asked,
             then install this APK. Login/upload need Firebase (coming next).
