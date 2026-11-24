@@ -43,3 +43,4 @@ flutter:
   assets:
     # Font used by FFmpeg drawtext for the text overlay.
     - assets/fonts/DejaVuSans-Bold.ttf
+# CI health probe — 2026-11-24 (comment only, no code change)
